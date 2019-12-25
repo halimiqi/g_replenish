@@ -32,7 +32,7 @@ class gaegan(object):
         self.adj = placeholders['adj']
         self.dropout = placeholders['dropout']
         self.adj_ori = placeholders['adj_orig']
-        self.node_labels = placeholders['node_labels']
+        #self.node_labels = placeholders['node_labels']
         self.features_nonzero = features_nonzero
         self.batch_size = FLAGS.batch_size
         self.latent_dim = FLAGS.latent_dim
@@ -64,34 +64,25 @@ class gaegan(object):
             self.x_tilde_output_ori = self.x_tilde
         if self.if_drop_edge != False:
             #self.x_tilde, self.new_adj_output = self.delete_k_edge(self.x_tilde, self.adj_ori_dense)  # convert the original graph with k edges
-            self.x_tilde, self.new_adj_output = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
+            #self.x_tilde = np.zeros
+            for time in range(FLAGS.delete_edge_times):
+                self.x_tilde_out, self.new_adj_output = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
+                if time == 0:
+                    self.x_tilde_average = self.x_tilde_out
+                else:
+                    self.x_tilde_average = self.x_tilde_average + self.x_tilde_out
+            self.x_tilde_average = self.x_tilde_average / FLAGS.delete_edge_times
             #self.x_tilde, self.new_adj_output = self.delete_k_edge_max(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
-            self.x_tilde_deleted = self.x_tilde
+            #self.x_tilde_deleted = self.x_tilde_out
+            self.x_tilde_deleted = self.x_tilde_average
             self.new_adj_without_norm = self.new_adj_output
 
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
+
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
         # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
         # _,self.mod_pred,_ = self.d_GCN(self.inputs, self.adj_dense, reuse = True)
 
-
-        # self.vaeD_tilde, self.gaegan_KL, self.Dis_z_gaegan = self.discriminate_mock_detect(self.inputs, self.new_adj_output)
-        # self.realD_tilde , self.dis_KL, self.Dis_z_clean= self.discriminate_mock_detect(self.inputs, self.adj_dense, reuse=True)
-        a = 1
-        #self.x_p = 0
-        # if FLAGS.generator == "graphite":
-        #     self.x_p = self.generate_graphite_simple(self.zp, self.zp.shape[1],self.input_dim, reuse = True)
-        #     #self.x_p = self.normalize_graph(self.x_p)
-        # if FLAGS.generator == "inner_product":
-        #     self.x_p = self.generate(self.zp, self.zp.shape[1],reuse= True)
-            #self.x_p = self.normalize_graph(self.x_p)
-        # the nromalize part sometimes will fly
-        #self.x_p = self.normalize_graph(self.x_p)
-        #self.adj_dense = tf.sparse_tensor_to_dense(self.adj)
-
-        #self.input_dense = tf.sparse_tensor_to_dense(self.inputs)
-        #self.realD_tilde = self.discriminate_mock_detect(self.inputs, self.adj_dense, reuse = True)
-        #self.GD_logits = self.discriminate_mock_detect(self.inputs, self.x_p, reuse = True)
         return
 
 
@@ -164,6 +155,13 @@ class gaegan(object):
         return new_adj_out, ori_adj_out
 
     def delete_k_edge_min_new(self, new_adj, ori_adj, k=3):  ## this is the newest delete part
+        """
+        delete the k edges in the new matrix
+        :param new_adj:   the x_tilde after the generator
+        :param ori_adj:   the original dense adj
+        :param k:   how many edges to delete
+        :return:  new_adj_out:the deleted edges for x_tilde; ori_adj_out: the deleted edges for original adj
+        """
         ones = tf.ones_like(new_adj, dtype = tf.float32)
         max_value = tf.reduce_max(new_adj)
         lower_bool_label = tf.linalg.band_part(ori_adj,-1,0)

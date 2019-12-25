@@ -7,7 +7,9 @@ from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
 import datetime
 import utils
-import GCN_3L as GCN
+from gcn.utils import load_data
+#import GCN_3L as GCN
+from gcn import train_test as GCN
 from optimizer import OptimizerAE, OptimizerVAE
 import numpy as np
 import scipy.sparse as sp
@@ -21,21 +23,31 @@ print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
 from ops import print_mu, print_mu2
 # set the random seed
-np.random.seed(121)
-tf.set_random_seed(121)
+seed = 152   # last random seed is 141
+np.random.seed(seed)
+tf.set_random_seed(seed)
 # Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 # flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
 flags.DEFINE_integer('n_class', 6, 'Number of epochs to train.')
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
-flags.DEFINE_integer('epochs', 2005, 'Number of epochs to train.')
+flags.DEFINE_integer('epochs', 1200, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('hidden3', 32, 'Number of units in graphite hidden layers.')
 flags.DEFINE_float('weight_decay', 0., 'Weight for L2 loss on embedding matrix.')
-flags.DEFINE_integer('gcn_hidden1', 32, 'Number of units in hidden layer 1.')
-flags.DEFINE_integer('gcn_hidden2', 6, 'Number of units in hidden layer 2.')
+flags.DEFINE_integer('delete_edge_times', 10, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
+
+####### for clean gcn training and test
+flags.DEFINE_float('gcn_learning_rate', 0.01, 'Initial learning rate.')
+#flags.DEFINE_integer('epochs', 200, 'Number of epochs to train.')
+flags.DEFINE_integer('gcn_hidden1', 16, 'Number of units in hidden layer 1.')
+#flags.DEFINE_float('dropout', 0.5, 'Dropout rate (1 - keep probability).')
+flags.DEFINE_float('gcn_weight_decay', 5e-4, 'Weight for L2 loss on embedding matrix.')
+#flags.DEFINE_integer('early_stopping', 10, 'Tolerance for early stopping (# of epochs).')
+flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
+###########################
 flags.DEFINE_float('dropout', 0.3, 'Dropout rate (1 - keep probability).')
 flags.DEFINE_float('g_scale_factor', 1- 0.75/2, 'the parametor for generate fake loss')
 flags.DEFINE_float('d_scale_factor', 0.25, 'the parametor for discriminator real loss')
@@ -45,7 +57,7 @@ flags.DEFINE_float('mincut_r', 0.01, 'The r parameters for the cutmin loss orth 
 flags.DEFINE_float('autoregressive_scalar', 0.2, 'the parametor for graphite generator')
 flags.DEFINE_string('model', 'gae_gan', 'Model string.')
 flags.DEFINE_string('generator', 'dense', 'Which generator will be used') # the options are "inner_product", "graphite", "graphite_attention", "dense_attention" , "dense"
-flags.DEFINE_string('dataset', 'cora', 'Dataset string.')
+flags.DEFINE_string('dataset', 'citeseer', 'Dataset string.')
 flags.DEFINE_integer('features', 1, 'Whether to use features (1) or not (0).')
 # seting from the vae gan
 from tensorflow.python.client import device_lib
@@ -72,27 +84,27 @@ showed_target_idx = 0   # the target index group of targets you want to show
 model_str = FLAGS.model
 dataset_str = FLAGS.dataset
 # Load data
-_A_obs, _X_obs, _z_obs = utils.load_npz('data/citeseer.npz')
+# _A_obs, _X_obs, _z_obs = utils.load_npz('data/citeseer.npz')
+adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data("citeseer")
 
-
-_A_obs = _A_obs + _A_obs.T #变GCN_ori as GCN
-_A_obs[_A_obs > 1] = 1
-adj = _A_obs
+# _A_obs = _A_obs + _A_obs.T #变GCN_ori as GCN
+# _A_obs[_A_obs > 1] = 1
+# adj = _A_obs
 adj_orig = adj
-adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]), shape=adj_orig.shape)
+adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]), shape=adj_orig.shape)   # delete self loop
 adj_orig.eliminate_zeros()
 adj_norm, adj_norm_sparse = preprocess_graph(adj)
 
-_K = _z_obs.max()+1 #类别个数
-features_normlize = normalize(_X_obs, axis=0, norm='max')
+#_K = _z_obs.max()+1 #类别个数
+_K = y_train.shape[1]
+features_normlize = normalize(features.tocsr(), axis=0, norm='max')
 features = sp.csr_matrix(features_normlize)
 
 #add comm_label this time to get the good accuracy
-node_labels = np.eye(_K)[_z_obs] #把标签转化为one-hot
+# node_labels = np.eye(_K)[_z_obs] #把标签转化为one-hot
 
 
 # Store original adjacency matrix (without diagonal entries) for later
-a = 1
 
 
 # adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
@@ -100,15 +112,14 @@ a = 1
 if FLAGS.features == 0:
     features = sp.identity(features.shape[0])  # featureless
 # Some preprocessing
-adj_norm, adj_norm_sparse = preprocess_graph(adj)
 
 placeholders = {
     'features': tf.sparse_placeholder(tf.float32, name="ph_features"),
     'adj': tf.sparse_placeholder(tf.float32, name="ph_adj"),
     'adj_orig': tf.sparse_placeholder(tf.float32, name="ph_orig"),
     'dropout': tf.placeholder_with_default(0., shape=(), name="ph_dropout"),
-    'node_labels': tf.placeholder(tf.float32, name="ph_node_labels"),
-    'node_ids': tf.placeholder(tf.float32, name="ph_node_ids")
+    # 'node_labels': tf.placeholder(tf.float32, name="ph_node_labels"),
+    # 'node_ids': tf.placeholder(tf.float32, name="ph_node_ids")
 }
 
 num_nodes = adj.shape[0]
@@ -117,7 +128,7 @@ features_csr = features_csr.astype('float32')
 features = sparse_to_tuple(features.tocoo())
 num_features = features[2][1]
 features_nonzero = features[1].shape[0]
-n_class = _z_obs.max()+1 #类别个数
+n_class = _K
 
 # seed = 68
 unlabeled_share = 0.8  # the propotion for test
@@ -125,11 +136,11 @@ val_share = 0.1        # the propotion for validation
 train_share = 1 - unlabeled_share - val_share # the proportion for trainingr
 gpu_id = 0
 # np.random.seed(seed)
-split_train, split_val, split_unlabeled = utils.train_val_test_split_tabular(np.arange(num_nodes),
-                                                                       train_size=train_share,
-                                                                       val_size=val_share,
-                                                                       test_size=unlabeled_share,
-                                                                       stratify=_z_obs)
+# split_train, split_val, split_unlabeled = utils.train_val_test_split_tabular(np.arange(num_nodes),
+#                                                                        train_size=train_share,
+#                                                                        val_size=val_share,
+#                                                                        test_size=unlabeled_share,
+#                                                                        stratify=_z_obs)
 
 # Create model
 
@@ -338,11 +349,11 @@ def trained_dis_base(adj_norm,new_adj, if_ori):
 def train():
     # train GCN first
     adj_norm_sparse_csr = adj_norm_sparse.tocsr()
-    sizes = [FLAGS.gcn_hidden1, FLAGS.gcn_hidden2, n_class]
-    surrogate_model = GCN.GCN(sizes, adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
-    surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
-    ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
-
+    # sizes = [FLAGS.gcn_hidden1, FLAGS.gcn_hidden2, n_class]
+    # surrogate_model = GCN.GCN(sizes, adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
+    # surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
+    # ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
+    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_orig, name = "original")
 
     if_drop_edge = True
     ## set the checkpoint path
@@ -350,19 +361,19 @@ def train():
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     checkpoints_dir = os.path.join(checkpoints_dir_base, current_time, current_time)
     ############
-    tf.reset_default_graph()
     global_steps = tf.get_variable('global_step', trainable=False, initializer=0)
     new_learning_rate = tf.train.exponential_decay(FLAGS.learn_rate_init, global_step=global_steps, decay_steps=10000,
                                                    decay_rate=0.98)
     new_learn_rate_value = FLAGS.learn_rate_init
     ## set the placeholders
+
     placeholders = {
         'features': tf.sparse_placeholder(tf.float32, name= "ph_features"),
         'adj': tf.sparse_placeholder(tf.float32,name= "ph_adj"),
         'adj_orig': tf.sparse_placeholder(tf.float32, name = "ph_orig"),
         'dropout': tf.placeholder_with_default(0., shape=(), name = "ph_dropout"),
-        'node_labels': tf.placeholder(tf.float32, name = "ph_node_labels"),
-        'node_ids' : tf.placeholder(tf.float32, name = "ph_node_ids")
+        # 'node_labels': tf.placeholder(tf.float32, name = "ph_node_labels"),
+        # 'node_ids' : tf.placeholder(tf.float32, name = "ph_node_ids")
     }
     # build models
     model = None
@@ -410,7 +421,7 @@ def train():
     #     checkpoints_dir_base = os.path.join("./checkpoints/base", FLAGS.trained_base_path)
     #     saver.restore(sess, tf.train.latest_checkpoint(checkpoints_dir_base))
 
-    feed_dict = construct_feed_dict(adj_norm, adj_label, features,split_train, node_labels[split_train], placeholders)
+    feed_dict = construct_feed_dict(adj_norm, adj_label, features, placeholders)
     feed_dict.update({placeholders['dropout']: FLAGS.dropout})
     # pred_dis_res = model.vaeD_tilde.eval(session=sess, feed_dict=feed_dict)
 
@@ -422,6 +433,8 @@ def train():
         sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_ori.npz", adj_orig)
         print("save the loaded adj")
     # print("before training generator")
+    #####################################################
+
     #####################################################
     G_loss_min = 1000
     for epoch in range(FLAGS.epochs):
@@ -466,21 +479,39 @@ def train():
     print("Optimization Finished!")
     feed_dict.update({placeholders['dropout']: 0})
     new_adj = get_new_adj(feed_dict,sess, model)
-    new_adj_norm, new_adj_norm_sparse = preprocess_graph(new_adj)
-    new_adj_norm_sparse_csr = new_adj_norm_sparse.tocsr()
-    modified_model = GCN.GCN(sizes, new_adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
-    modified_model.train(new_adj_norm_sparse_csr, split_train, split_val, node_labels)
-    modified_acc = modified_model.test(split_unlabeled, node_labels, new_adj_norm_sparse_csr)
+    new_adj = new_adj - np.diag(np.diag(new_adj))
+    new_adj_sparse = sp.csr_matrix(new_adj)
+    print((abs(new_adj_sparse - new_adj_sparse.T) > 1e-10).nnz == 0)
+    # new_adj_norm, new_adj_norm_sparse = preprocess_graph(new_adj)
+    # new_adj_norm_sparse_csr = new_adj_norm_sparse.tocsr()
+    # modified_model = GCN.GCN(sizes, new_adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
+    # modified_model.train(new_adj_norm_sparse_csr, split_train, split_val, node_labels)
+    # modified_acc = modified_model.test(split_unlabeled, node_labels, new_adj_norm_sparse_csr)
+    testacc_new, valid_acc_new = GCN.run(FLAGS.dataset, new_adj_sparse, name = "modified")
+    new_adj = get_new_adj(feed_dict, sess, model)
+    new_adj = new_adj - np.diag(np.diag(new_adj))
+    new_adj_sparse = sp.csr_matrix(new_adj)
+    testacc_new2, valid_acc_new = GCN.run(FLAGS.dataset, new_adj_sparse, name="modified")
+    new_adj = get_new_adj(feed_dict, sess, model)
+    new_adj = new_adj - np.diag(np.diag(new_adj))
+    new_adj_sparse = sp.csr_matrix(new_adj)
+    testacc_new3, valid_acc_new = GCN.run(FLAGS.dataset, new_adj_sparse, name="modified")
     #np.save("./data/hinton/hinton_new_adj_48_0815.npy", new_adj)
     #roc_score, ap_score = get_roc_score(test_edges, test_edges_false,feed_dict, sess, model)
     ##### The final results ####
     print("*" * 30)
     print("the final results:\n")
     print("The original acc is: ")
-    print(ori_acc)
+    print(testacc)
     print("*#"* 15)
     print("The modified acc is : ")
-    print(modified_acc)
+    print(testacc_new)
+    print("*#" * 15)
+    print("The modified acc is : ")
+    print(testacc_new2)
+    print("*#" * 15)
+    print("The modified acc is : ")
+    print(testacc_new3)
     return new_adj
 ## delete edges between the targets and 1add some
 def base_line():
