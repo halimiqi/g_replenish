@@ -114,6 +114,7 @@ class GraphConvolution_denseadj(Layer):
         super(GraphConvolution_denseadj, self).__init__(**kwargs)
         with tf.variable_scope(self.name + '_vars'):
             self.vars['weights'] = weight_variable_glorot(input_dim, output_dim, name="weights")
+            self.vars['bias'] = tf.get_variable(name = "bias", shape = [output_dim], initializer=tf.zeros(output_dim))
         self.dropout = dropout
         self.adj = adj
         self.act = act
@@ -124,6 +125,7 @@ class GraphConvolution_denseadj(Layer):
         x = tf.nn.dropout(x, 1-self.dropout)
         x = tf.matmul(x, self.vars['weights'])
         x = tf.matmul(new_adj, x)
+        x = x + self.vars['bias']
         outputs = self.act(x)
         return outputs
 
@@ -134,6 +136,7 @@ class GraphConvolutionSparse_denseadj(Layer):
         super(GraphConvolutionSparse_denseadj, self).__init__(**kwargs)
         with tf.variable_scope(self.name + '_vars'):
             self.vars['weights'] = weight_variable_glorot(input_dim, output_dim, name="weights")
+            self.vars['bias'] = tf.get_variable(name="bias", shape=[output_dim], initializer=tf.zeros(output_dim))
         self.dropout = dropout
         self.adj = adj
         self.act = act
@@ -146,6 +149,7 @@ class GraphConvolutionSparse_denseadj(Layer):
         x = dropout_sparse(x, 1-self.dropout, self.features_nonzero)
         x = tf.sparse_tensor_dense_matmul(x, self.vars['weights'])
         x = tf.matmul(new_adj, x)
+        x = x + self.vars['bias']   # add bias on the GCN part
         outputs = self.act(x)
         return outputs
 

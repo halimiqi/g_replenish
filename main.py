@@ -6,6 +6,8 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
 import datetime
+import utils
+import GCN_3L as GCN
 from optimizer import OptimizerAE, OptimizerVAE
 import numpy as np
 import scipy.sparse as sp
@@ -25,13 +27,15 @@ tf.set_random_seed(121)
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 # flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
-flags.DEFINE_integer('n_clusters', 20, 'Number of epochs to train.')
+flags.DEFINE_integer('n_class', 6, 'Number of epochs to train.')
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
 flags.DEFINE_integer('epochs', 2005, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('hidden3', 32, 'Number of units in graphite hidden layers.')
 flags.DEFINE_float('weight_decay', 0., 'Weight for L2 loss on embedding matrix.')
+flags.DEFINE_integer('gcn_hidden1', 32, 'Number of units in hidden layer 1.')
+flags.DEFINE_integer('gcn_hidden2', 6, 'Number of units in hidden layer 2.')
 flags.DEFINE_float('dropout', 0.3, 'Dropout rate (1 - keep probability).')
 flags.DEFINE_float('g_scale_factor', 1- 0.75/2, 'the parametor for generate fake loss')
 flags.DEFINE_float('d_scale_factor', 0.25, 'the parametor for discriminator real loss')
@@ -58,58 +62,38 @@ flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite ge
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
 if_drop_edge = True
-if_save_model = True
+if_save_model = False
 # if train the discriminator
-if_train_dis = False
-restore_trained_our = True
+if_train_dis = True
+restore_trained_our = False
 showed_target_idx = 0   # the target index group of targets you want to show
 ###################################
 ### read and process the graph
 model_str = FLAGS.model
 dataset_str = FLAGS.dataset
 # Load data
-#adj, features = load_data(dataset_str)
-#adj = sp.csr_matrix(np.load("../data/core_member_adj.npy"))
-#adj = sp.csr_matrix(np.load("../data/hanjiawei/adj_unweight_small_0814.npy"))
-#adj = sp.csr_matrix(np.load("../data/hinton/hinton_adj_small_0815.npy"))
-#adj = sp.csr_matrix(np.load("./data/hinton/hinton_adj_48_0815.npy"))
-#adj = sp.load_npz('./data/532_qq_data/qq_adj_all_csr.npz')
-#adj = sp.load_npz('./data/532_qq_data/qq_adj_all_csr_5000_5group.npz')
-adj = sp.load_npz('./data/1215_qq_data_10_3/qq_adj_all_csr_5000_1215_10_3.npz')
-#adj = sp.load_npz('./data/532_qq_data/qq_adj_all_csr_big_20000.npz')
-#adj = sp.load_npz("./data/dblp/dblp_adj_sparse_big.npz")
-#adj = sp.load_npz("./data/dblp/dblp_adj_sparse_small.npz")
-#features = sp.identity(adj.shape[0])
-#features = sp.csr_matrix(np.load("../data/hanjiawei/feature_small_0814.npy"))
-#features = sp.csr_matrix(np.load("../data/hinton/hinton_featrue_small_0815.npy"))
-#features = sp.csr_matrix(np.load("./data/hinton/hinton_featrue_48_0815.npy"))
-#features = sp.csr_matrix(np.load("./data/532_qq_data/qq_features.npy"))
-#features = np.load("./data/532_qq_data/qq_features_5000_5group.npy")
-features = np.load("data/1215_qq_data_10_3/qq_features_5000_1215_10_3.npy")
-#features = np.load("./data/532_qq_data/qq_features_big_20000.npy")
-#features = np.load("./data/dblp/dblp_features_small.npy")
-#features = np.load("./data/dblp/dblp_features_big.npy")
-
-features_normlize = normalize(features, axis=0, norm='max')
-features = sp.csr_matrix(features_normlize)
-
-#add comm_label this time to get the good accuracy
-comm_label = np.zeros([75,1])
-comm_label[:24] = 1
-#target_list = get_target_nodes_and_comm_labels(FLAGS.target_index_list)
-#target_list =  np.load("./data/532_qq_data/qq_target_label_5000_5group.npy")
-target_list =  np.load("data/1215_qq_data_10_3/qq_target_label_5000_1215_10_3.npy")
-#target_list =  np.load("./data/532_qq_data/qq_target_label_big_20000.npy")
-#target_list = np.load("./data/dblp/dblp_target_label_small.npy")
-#target_list = np.load("./data/dblp/dblp_target_label_big.npy")
-#target_list.astype(int)
-# Store original adjacency matrix (without diagonal entries) for later
-a = 1
+_A_obs, _X_obs, _z_obs = utils.load_npz('data/citeseer.npz')
 
 
+_A_obs = _A_obs + _A_obs.T #变GCN_ori as GCN
+_A_obs[_A_obs > 1] = 1
+adj = _A_obs
 adj_orig = adj
 adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]), shape=adj_orig.shape)
 adj_orig.eliminate_zeros()
+adj_norm, adj_norm_sparse = preprocess_graph(adj)
+
+_K = _z_obs.max()+1 #类别个数
+features_normlize = normalize(_X_obs, axis=0, norm='max')
+features = sp.csr_matrix(features_normlize)
+
+#add comm_label this time to get the good accuracy
+node_labels = np.eye(_K)[_z_obs] #把标签转化为one-hot
+
+
+# Store original adjacency matrix (without diagonal entries) for later
+a = 1
+
 
 # adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
 # adj = adj_train
@@ -119,17 +103,33 @@ if FLAGS.features == 0:
 adj_norm, adj_norm_sparse = preprocess_graph(adj)
 
 placeholders = {
-    'features': tf.sparse_placeholder(tf.float32),
-    'adj': tf.sparse_placeholder(tf.float32),
-    'adj_orig': tf.sparse_placeholder(tf.float32),
-    'dropout': tf.placeholder_with_default(0., shape=()),
-    #'comm_label': tf.placeholder(tf.float32)
+    'features': tf.sparse_placeholder(tf.float32, name="ph_features"),
+    'adj': tf.sparse_placeholder(tf.float32, name="ph_adj"),
+    'adj_orig': tf.sparse_placeholder(tf.float32, name="ph_orig"),
+    'dropout': tf.placeholder_with_default(0., shape=(), name="ph_dropout"),
+    'node_labels': tf.placeholder(tf.float32, name="ph_node_labels"),
+    'node_ids': tf.placeholder(tf.float32, name="ph_node_ids")
 }
 
 num_nodes = adj.shape[0]
+features_csr = features
+features_csr = features_csr.astype('float32')
 features = sparse_to_tuple(features.tocoo())
 num_features = features[2][1]
 features_nonzero = features[1].shape[0]
+n_class = _z_obs.max()+1 #类别个数
+
+# seed = 68
+unlabeled_share = 0.8  # the propotion for test
+val_share = 0.1        # the propotion for validation
+train_share = 1 - unlabeled_share - val_share # the proportion for trainingr
+gpu_id = 0
+# np.random.seed(seed)
+split_train, split_val, split_unlabeled = utils.train_val_test_split_tabular(np.arange(num_nodes),
+                                                                       train_size=train_share,
+                                                                       val_size=val_share,
+                                                                       test_size=unlabeled_share,
+                                                                       stratify=_z_obs)
 
 # Create model
 
@@ -198,7 +198,7 @@ def train_dis_base():
     # build models
     model = None
     if model_str == "gae_gan":
-        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate,target_list,if_drop_edge)
+        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate,if_drop_edge)
         model.build_model()
     pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
     norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
@@ -215,7 +215,6 @@ def train_dis_base():
                                   num_nodes=num_nodes,
                                   pos_weight=pos_weight,
                                   norm=norm,
-                                  target_list=target_list,
                                   global_step=global_steps,
                                   new_learning_rate=new_learning_rate,
                                   if_drop_edge = if_drop_edge
@@ -257,8 +256,7 @@ def train_dis_base():
             #     for target in targets:
             #         pred_target = pred_dis_res[target, :]
             #         print("The target %d:" % (target))
-            #         print(pred_target)
-            targets = target_list[showed_target_idx]
+            #         print(pred_target
             # for target in targets:
             #     pred_target = pred_dis_res[target, :]
             #     print("The target %d:" % (target))
@@ -280,17 +278,6 @@ def train_dis_base():
     #         pred_target = pred_dis_res[target, :]
     #         print("The target %d:" % (target))
     #         print(pred_target)
-    targets = target_list[showed_target_idx]
-    for target in targets:
-        pred_target = pred_dis_res[target,:]
-        print("The target %d:" % (target))
-        print(pred_target)
-    print("*"*15)
-    print_mu(target_list, pred_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print_mu2(target_list, pred_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print("##*"*10 )
     # new_adj = get_new_adj(feed_dict, sess_bass, model)
     # temp_pred = new_adj.reshape(-1)
     # temp_ori = adj_norm_sparse.todense().A.reshape(-1)
@@ -344,27 +331,19 @@ def trained_dis_base(adj_norm,new_adj, if_ori):
         feed_dict.update({placeholders['dropout']: 0})
         realD_tilde = graph.get_tensor_by_name("discriminate_1/Softmax_1:0")
         pred_dis_res = realD_tilde.eval(session=sess, feed_dict=feed_dict)
-        # for targets in target_list:
-        #     for target in targets:
-        #         pred_target = pred_dis_res[target, :]
-        #         print("The target %d:" % (target))
-        #         print(pred_target)
-        targets = target_list[showed_target_idx]
-        for target in targets:
-            pred_target = pred_dis_res[target, :]
-            print("The target %d:" % (target))
-            print(pred_target)
-        print("#" * 30)
-        print("*" * 15)
-        print_mu(target_list, pred_dis_res, FLAGS.n_clusters)
-        print("*" * 15)
-        print_mu2(target_list, pred_dis_res, FLAGS.n_clusters)
-        print("*" * 15)
-        print("##*"*10)
+
     return
 
 # Train model
 def train():
+    # train GCN first
+    adj_norm_sparse_csr = adj_norm_sparse.tocsr()
+    sizes = [FLAGS.gcn_hidden1, FLAGS.gcn_hidden2, n_class]
+    surrogate_model = GCN.GCN(sizes, adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
+    surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
+    ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
+
+
     if_drop_edge = True
     ## set the checkpoint path
     checkpoints_dir_base = "./checkpoints"
@@ -382,12 +361,13 @@ def train():
         'adj': tf.sparse_placeholder(tf.float32,name= "ph_adj"),
         'adj_orig': tf.sparse_placeholder(tf.float32, name = "ph_orig"),
         'dropout': tf.placeholder_with_default(0., shape=(), name = "ph_dropout"),
-        #'comm_label': tf.placeholder(tf.float32, name = "ph_comm_label")
+        'node_labels': tf.placeholder(tf.float32, name = "ph_node_labels"),
+        'node_ids' : tf.placeholder(tf.float32, name = "ph_node_ids")
     }
     # build models
     model = None
     if model_str == "gae_gan":
-        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate, target_list)
+        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate)
         model.build_model()
     pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
     norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
@@ -404,7 +384,6 @@ def train():
                                   num_nodes=num_nodes,
                                   pos_weight=pos_weight,
                                   norm=norm,
-                                  target_list= target_list ,
                                   global_step=global_steps,
                                   new_learning_rate = new_learning_rate
                                   )
@@ -413,7 +392,7 @@ def train():
     sess.run(tf.global_variables_initializer())
     saver = ""
     var_list = tf.global_variables()
-    #var_list = [var for var in var_list if "discriminate" in var.name]
+    var_list = [var for var in var_list if ("encoder"  in var.name) or ('generate' in var.name)]
     saver = tf.train.Saver(var_list, max_to_keep=10)
     if if_save_model:
         os.mkdir(os.path.join(checkpoints_dir_base, current_time))
@@ -431,33 +410,17 @@ def train():
     #     checkpoints_dir_base = os.path.join("./checkpoints/base", FLAGS.trained_base_path)
     #     saver.restore(sess, tf.train.latest_checkpoint(checkpoints_dir_base))
 
-    feed_dict = construct_feed_dict(adj_norm, adj_label, features, placeholders)
+    feed_dict = construct_feed_dict(adj_norm, adj_label, features,split_train, node_labels[split_train], placeholders)
     feed_dict.update({placeholders['dropout']: FLAGS.dropout})
-    pred_dis_res = model.vaeD_tilde.eval(session=sess, feed_dict=feed_dict)
-    # targets = target_list[showed_target_idx]
-    # for target in targets:
-    #     pred_target = pred_dis_res[target, :]
-    #     print("The target %d:" % (target))
-    #     print(pred_target)
-    # print("#" * 30)
+    # pred_dis_res = model.vaeD_tilde.eval(session=sess, feed_dict=feed_dict)
+
     #### save new_adj without norm#############
-    print("*" * 15)
-    print("The modified adj mu")
-    print_mu(target_list, pred_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print_mu2(target_list, pred_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print("The clean adj mu")
-    clean_dis_res = model.realD_tilde.eval(session=sess, feed_dict=feed_dict)
-    print_mu(target_list, clean_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print_mu2(target_list, clean_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    modified_adj =  get_new_adj(feed_dict,sess, model)
-    modified_adj = sp.csr_matrix(modified_adj)
-    sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_new.npz", modified_adj)
-    sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_ori.npz", adj_orig)
-    print("save the loaded adj")
+    if restore_trained_our:
+        modified_adj =  get_new_adj(feed_dict,sess, model)
+        modified_adj = sp.csr_matrix(modified_adj)
+        sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_new.npz", modified_adj)
+        sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_ori.npz", adj_orig)
+        print("save the loaded adj")
     # print("before training generator")
     #####################################################
     G_loss_min = 1000
@@ -469,129 +432,57 @@ def train():
         if restore_trained_our:
             sess.run(opt.G_min_op, feed_dict=feed_dict)
         else: # it is the new model
-            if epoch >= 1002:
+            if epoch < FLAGS.epochs:
                 sess.run(opt.G_min_op, feed_dict=feed_dict)
-                if if_train_dis == True:
-                    sess.run(opt.D_min_op, feed_dict=feed_dict)
-            # run D optimizer
-            if epoch < 1000:
-                sess.run(opt.D_min_op_clean, feed_dict=feed_dict)
-
-        #avg_acc_D = sess.run(opt.D_accuracy, feed_dict)
+            #
         ##
         ##
         if epoch % 50 == 0:
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-            D_loss_clean, D_loss, G_loss,new_learn_rate_value = sess.run([opt.D_mincut_loss_clean,opt.D_mincut_loss, opt.G_comm_loss,new_learning_rate],feed_dict=feed_dict)
+            G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg ,new_learning_rate],feed_dict=feed_dict)
+            laplacian_mat = sess.run([opt.reg_mat],feed_dict=feed_dict)
             #new_adj = get_new_adj(feed_dict, sess, model)
             new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
             temp_pred = new_adj.reshape(-1)
             #temp_ori = adj_norm_sparse.todense().A.reshape(-1)
             temp_ori = adj_label_sparse.todense().A.reshape(-1)
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
-            print("Step %d:D_clean:loss = %.7f ,  D: loss = %.7f G: loss=%.7f ,info_score = %.6f, LR=%.7f" % (epoch,D_loss_clean, D_loss, G_loss, mutual_info,new_learn_rate_value))
-            ## check the D_loss_min
-            if (G_loss < G_loss_min) and (epoch > 1200) and (if_save_model):
+            print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
+            print("lap_mat is:")
+            print(laplacian_mat[0][:10])
+            #';# check the D_loss_min
+            if (G_loss < G_loss_min) and (epoch > 1000) and (if_save_model):
                 saver.save(sess, checkpoints_dir, global_step=epoch, write_meta_graph=False)
                 print("min G_loss new")
             if G_loss < G_loss_min:
                 G_loss_min = G_loss
-            ## check the target attack results
-            #pred_dis_res = model.vaeD_tilde.eval(session = sess, feed_dict = feed_dict)
-            #########################
-            # print("the modified edge index")
-            # indexes = sess.run(model.new_indexes, feed_dict = feed_dict)
-            # print(indexes)
-            # print("x_tilde_ori")
-            # x_tilde_ori_test = sess.run(model.x_tilde_output_ori, feed_dict=feed_dict)
-            # print(x_tilde_ori_test)
-            # print("upper_bool_label")
-            # upper_bool_label_test = sess.run(model.upper_bool_label, feed_dict=feed_dict)
-            # print(upper_bool_label_test)
-            # print("The adj for del")
-            # adj_del_test = sess.run(model.new_adj_for_del_test, feed_dict=feed_dict)
-            # print(adj_del_test)
-            # print("The adj for del")
-            # new_adj_for_del_softmax = sess.run(model.new_adj_for_del_softmax, feed_dict=feed_dict)
-            # print(new_adj_for_del_softmax)
-            #mask_test = sess.run(model.mask_test, feed_dict=feed_dict)
-            #mask, delete_onehot_mask, test_indexes = sess.run([model.mask, model.delete_onehot_mask,model.new_indexes], feed_dict=feed_dict)
-            #################################
-            # print("#*" * 10)
-            # print("The modified adj")
-            # targets = target_list[showed_target_idx]
-            # for target in targets:
-            #     pred_target = pred_dis_res[target,:]
-            #     print("The target %d"%(target))
-            #     print(pred_target)
-            # print("#*"*10)
-            # print("The clean adj")
-            # clean_dis_res = model.realD_tilde.eval(session = sess, feed_dict = feed_dict)
-            # for target in targets:
-            #     pred_target = clean_dis_res[target,:]
-            #     print("The target %d"%(target))
-            #     print(pred_target)
-            # print("#" * 30)
+
         if (epoch % 200 ==1) and if_save_model:
             saver.save(sess,checkpoints_dir, global_step = epoch, write_meta_graph = False)
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-    saver.save(sess, checkpoints_dir, global_step=FLAGS.epochs, write_meta_graph=False)
+    saver.save(sess, checkpoints_dir, global_step=FLAGS.epochs, write_meta_graph=True)
     print("Optimization Finished!")
+    feed_dict.update({placeholders['dropout']: 0})
     new_adj = get_new_adj(feed_dict,sess, model)
+    new_adj_norm, new_adj_norm_sparse = preprocess_graph(new_adj)
+    new_adj_norm_sparse_csr = new_adj_norm_sparse.tocsr()
+    modified_model = GCN.GCN(sizes, new_adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
+    modified_model.train(new_adj_norm_sparse_csr, split_train, split_val, node_labels)
+    modified_acc = modified_model.test(split_unlabeled, node_labels, new_adj_norm_sparse_csr)
     #np.save("./data/hinton/hinton_new_adj_48_0815.npy", new_adj)
     #roc_score, ap_score = get_roc_score(test_edges, test_edges_false,feed_dict, sess, model)
     ##### The final results ####
-    feed_dict.update({placeholders['dropout']: 0})
-    pred_dis_res = model.vaeD_tilde.eval(session=sess, feed_dict=feed_dict)
     print("*" * 30)
     print("the final results:\n")
-    # for targets in target_list:
-    #     for target in targets:
-    #         pred_target = pred_dis_res[target, :]
-    #         print("The target %d:" % (target))
-    #         print(pred_target)
-    targets = target_list[showed_target_idx]
-    for target in targets:
-        pred_target = pred_dis_res[target, :]
-        print("The target %d:" % (target))
-        print(pred_target)
-    print("*" * 15)
-    print("The modified adj mu")
-    print_mu(target_list, pred_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print_mu2(target_list, pred_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print("The clean adj mu")
-    clean_dis_res = model.realD_tilde.eval(session=sess, feed_dict=feed_dict)
-    print_mu(target_list, clean_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    print_mu2(target_list, clean_dis_res, FLAGS.n_clusters)
-    print("*" * 15)
-    new_adj = get_new_adj(feed_dict,sess, model)
-    x_tilde_out = model.new_adj_output.eval(session=sess, feed_dict=feed_dict)
-    temp_pred = new_adj.reshape(-1)
-    temp_ori = adj_norm_sparse.todense().A.reshape(-1)
-    mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
-    #################################### the KL for the discriminator
-    gaegan_KL, dis_KL = sess.run([model.gaegan_KL, model.dis_KL], feed_dict = feed_dict)
-    gaegan_pred, clean_pred = sess.run([model.Dis_z_gaegan, model.Dis_z_clean], feed_dict)
-
-    print(gaegan_pred)
-    print(clean_pred)
-    print("**##")
-    print("The modified KL is :")
-    print(gaegan_KL)
-    print("The clean KL is :")
-    print(dis_KL)
-    print("**##")
-    ####################################################################
-    #print(f"The mutual informations is {mutual_info}")
-    print("The mutual informations is:")
-    print(mutual_info)
-    return new_adj, x_tilde_out
-## delete edges between the targets and add some
+    print("The original acc is: ")
+    print(ori_acc)
+    print("*#"* 15)
+    print("The modified acc is : ")
+    print(modified_acc)
+    return new_adj
+## delete edges between the targets and 1add some
 def base_line():
     target_budget = np.random.choice(len(target_list), FLAGS.baseline_target_budget, replace = False)
     target_budget = target_list[target_budget]
@@ -845,7 +736,7 @@ FLAGS = flags.FLAGS
 if __name__ == "__main__":
     #train_dis_base()
 
-    new_adj, x_tilde_out = train()
+    new_adj = train()
     # print("The original base model")
     #trained_dis_base(adj_norm, adj_label, if_ori = True)  #
     # print("The modified model base model")
