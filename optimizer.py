@@ -105,9 +105,14 @@ class Optimizergaegan(object):
             self.g_delta = rowsum - model.adj_ori_dense
             temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
             self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
-            #self.reg_mat = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
-            self.reg = tf.square(tf.norm(self.reg_mat))
-            self.reg = self.reg * 1e-10
+            ###### grab non zero part
+            #self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            ###### norm version
+            #self.reg = tf.square(tf.norm(self.reg_mat))
+            ###### trace version
+            self.reg = tf.square(tf.trace(self.reg_mat))
+            ####################
+            self.reg = self.reg * 1e-9
             #self.reg = tf.reduce_mean(self.reg_mat)
             self.reg = 1 / (self.reg + 1e-10)
 
