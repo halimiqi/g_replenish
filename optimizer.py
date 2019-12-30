@@ -159,6 +159,7 @@ class Optimizergaegan(object):
             ####################
             # self.reg = self.reg * 1e-9
             self.reg = self.reg
+            #self.reg = tf.log(self.reg)
             # self.reg = tf.reduce_mean(self.reg_mat)
             self.reg = 1 / (self.reg + 1e-10)
 
@@ -198,9 +199,9 @@ class Optimizergaegan(object):
             ###### trace version
             self.reg = tf.trace(self.reg_mat)
             ####################
-            #self.reg = self.reg * 1e-9
-            self.reg = self.reg
-            #self.reg = tf.log(self.reg + 1)
+            # self.reg = self.reg * 1e-9
+            # self.reg = self.reg
+            self.reg = tf.log(self.reg + 1)
             # self.reg = tf.reduce_mean(self.reg_mat)
             self.reg = 1 / (self.reg + 1e-10)
 

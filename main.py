@@ -12,13 +12,13 @@ import scipy.sparse as sp
 import time
 import os
 # set the random seed
-seed = 134   # last random seed is 141           0.703
+seed = 131   # last random seed is 141           0.703
 #random.seed(seed)
 np.random.seed(seed)
 tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
@@ -72,7 +72,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 10, "The k edges to delete")
+flags.DEFINE_integer("k", 50, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -137,7 +137,7 @@ n_class = _K
 unlabeled_share = 0.8  # the propotion for test
 val_share = 0.1        # the propotion for validation
 train_share = 1 - unlabeled_share - val_share # the proportion for trainingr
-gpu_id = 0
+gpu_id = 1
 # np.random.seed(seed)
 # split_train, split_val, split_unlabeled = utils.train_val_test_split_tabular(np.arange(num_nodes),
 #                                                                        train_size=train_share,
@@ -769,7 +769,7 @@ def test(saver,adj,features, meta_dir, checkpoints_dir):
 FLAGS = flags.FLAGS
 if __name__ == "__main__":
     #train_dis_base()
-    with open("results.txt", 'w+') as f_out:
+    with open("results_50.txt", 'w+') as f_out:
         for i in range(10):
             new_adj, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
             # testacc = 1.01
