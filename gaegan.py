@@ -48,6 +48,8 @@ class gaegan(object):
         # build the model
         self.z_x = self.encoder(self.inputs)
         self.x_tilde = 0
+        self.x_tilde_list = []
+        self.reward_percent_list = []
         self.adj_dense = tf.sparse_tensor_to_dense(self.adj, default_value=0, validate_indices=False, name=None) # normalize adj
         self.new_adj_output = self.adj_dense
         self.adj_ori_dense = tf.sparse_tensor_to_dense(self.adj_ori, default_value=0, validate_indices=False, name=None) #A + I
@@ -65,24 +67,24 @@ class gaegan(object):
         if self.if_drop_edge != False:
             #self.x_tilde, self.new_adj_output = self.delete_k_edge(self.x_tilde, self.adj_ori_dense)  # convert the original graph with k edges
             #self.x_tilde = np.zeros
-            for time in range(FLAGS.delete_edge_times):
-                self.x_tilde_out, self.new_adj_output = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
-                if time == 0:
-                    self.x_tilde_average = self.x_tilde_out
-                else:
-                    self.x_tilde_average = self.x_tilde_average + self.x_tilde_out
-            self.x_tilde_average = self.x_tilde_average / FLAGS.delete_edge_times
+            self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
+            self.x_tilde_list.append(self.x_tilde_out)
+            self.reward_percent_list.append(reward_per)
+            for time in range(max(FLAGS.delete_edge_times-1, 0)):
+                temp_x_tilde_out, _,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
+                                                                                   k=FLAGS.k)
+                self.x_tilde_list.append(temp_x_tilde_out)
+                self.reward_percent_list.append(reward_per)
             #self.x_tilde, self.new_adj_output = self.delete_k_edge_max(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
             #self.x_tilde_deleted = self.x_tilde_out
-            self.x_tilde_deleted = self.x_tilde_average
+            self.x_tilde_deleted = self.x_tilde_out
             self.new_adj_without_norm = self.new_adj_output
-
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
+
 
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
         # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
         # _,self.mod_pred,_ = self.d_GCN(self.inputs, self.adj_dense, reuse = True)
-
         return
 
 
@@ -128,7 +130,7 @@ class gaegan(object):
         self.new_adj_for_del_softmax  = new_adj_for_del_softmax
         new_indexes = tf.multinomial(tf.log([new_adj_for_del_softmax]), FLAGS.k)
         ######################## debug
-        self.new_indexes = new_indexes
+
         ########################
         self.mask = upper_ori_label
         self.mask = tf.reshape(self.mask, [-1])
@@ -186,6 +188,7 @@ class gaegan(object):
         new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
         self.new_adj_for_del_softmax  = new_adj_for_del_softmax
         new_indexes = tf.multinomial(tf.log([new_adj_for_del_softmax]), FLAGS.k)  # this is the sample section
+        percentage = tf.reduce_prod(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))
         ######################## debug
         self.new_indexes = new_indexes
         ########################
@@ -218,7 +221,7 @@ class gaegan(object):
         #new_adj_out = new_adj_out + (tf.transpose(new_adj_out) - tf.matrix_diag(tf.matrix_diag_part(new_adj_out)))
         ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
         self.ori_adj_out = ori_adj_out
-        return new_adj_out, ori_adj_out
+        return new_adj_out, ori_adj_out, percentage
 
     def delete_k_edge_max_new(self, new_adj, ori_adj, k=3):
         zeros = tf.zeros_like(new_adj)

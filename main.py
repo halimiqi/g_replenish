@@ -1,31 +1,34 @@
 import tensorflow as tf
+import random
 #from utils import mkdir_p
-from gaegan import gaegan
-from optimizer import Optimizergaegan
+
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
 import datetime
-import utils
-from gcn.utils import load_data
-#import GCN_3L as GCN
-from gcn import train_test as GCN
 from optimizer import OptimizerAE, OptimizerVAE
 import numpy as np
 import scipy.sparse as sp
 import time
 import os
+# set the random seed
+seed = 134   # last random seed is 141           0.703
+#random.seed(seed)
+np.random.seed(seed)
+tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
+from gaegan import gaegan
+from optimizer import Optimizergaegan
+from gcn.utils import load_data
+#import GCN_3L as GCN
+from gcn import train_test as GCN
 from ops import print_mu, print_mu2
-# set the random seed
-seed = 152   # last random seed is 141
-np.random.seed(seed)
-tf.set_random_seed(seed)
+
 # Settings
 flags = tf.app.flags
 FLAGS = flags.FLAGS
@@ -512,7 +515,7 @@ def train():
     print("*#" * 15)
     print("The modified acc is : ")
     print(testacc_new3)
-    return new_adj
+    return new_adj, testacc, testacc_new, testacc_new2, testacc_new3
 ## delete edges between the targets and 1add some
 def base_line():
     target_budget = np.random.choice(len(target_list), FLAGS.baseline_target_budget, replace = False)
@@ -766,8 +769,15 @@ def test(saver,adj,features, meta_dir, checkpoints_dir):
 FLAGS = flags.FLAGS
 if __name__ == "__main__":
     #train_dis_base()
+    with open("results.txt", 'w+') as f_out:
+        for i in range(10):
+            new_adj, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
+            # testacc = 1.01
+            # testaccnew1 = 1.01
+            # testaccnew2 = 1.01
+            # testaccnew3 = 1.01
+            f_out.write(str(testacc)+ ' '+str(testaccnew1)+ ' '+str(testaccnew2)+ ' '+str(testaccnew3)+"\n")
 
-    new_adj = train()
     # print("The original base model")
     #trained_dis_base(adj_norm, adj_label, if_ori = True)  #
     # print("The modified model base model")

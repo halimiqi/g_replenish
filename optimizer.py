@@ -98,30 +98,31 @@ class Optimizergaegan(object):
         #     self.G_comm_loss = (-1) * self.mu * eij
         ###################################################### the reg loss G loss for the new graph  remember to add negative mark
         if if_drop_edge == True:
-            self.reg = 0
-            ## the Laplacian loss
-            x_tilde_deleted_mat = tf.reshape(model.x_tilde_deleted, shape = [self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
-            self.g_delta = rowsum - model.adj_ori_dense
-            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
-            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
-            ###### grab non zero part
-            #self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
-            ###### norm version
-            #self.reg = tf.square(tf.norm(self.reg_mat))
-            ###### trace version
-            self.reg = tf.square(tf.trace(self.reg_mat))
-            ####################
-            self.reg = self.reg * 1e-9
-            #self.reg = tf.reduce_mean(self.reg_mat)
-            self.reg = 1 / (self.reg + 1e-10)
-
-            ## self.G_comm_loss
-            eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
-            eij = tf.reduce_sum(tf.log(eij))
-            #self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
-            self.G_comm_loss = (-1) * self.reg * eij
-
+            # self.reg = 0
+            # ## the Laplacian loss
+            # x_tilde_deleted_mat = tf.reshape(model.x_tilde_deleted, shape = [self.num_nodes, self.num_nodes])
+            # rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            # self.g_delta = rowsum - model.adj_ori_dense
+            # temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
+            # self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            # ###### grab non zero part
+            # #self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            # ###### norm version
+            # #self.reg = tf.square(tf.norm(self.reg_mat))
+            # ###### trace version
+            # self.reg = tf.square(tf.trace(self.reg_mat))
+            # ####################
+            # # self.reg = self.reg * 1e-9
+            # self.reg = self.reg
+            # #self.reg = tf.reduce_mean(self.reg_mat)
+            # self.reg = 1 / (self.reg + 1e-10)
+            #
+            # ## self.G_comm_loss
+            # eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            # eij = tf.reduce_sum(tf.log(eij))
+            # #self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            # self.G_comm_loss = (-1) * self.reg * eij
+            self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
             if FLAGS.generator == "graphite":
@@ -137,28 +138,91 @@ class Optimizergaegan(object):
                 self.G_min_op = self.generate_optimizer.minimize(self.G_comm_loss, global_step=global_step,
                                                                  var_list=generate_varlist)
             ######################################################
-        ######################################## cross entropy for discriminator not used now we put the GCN on the outside
-        # the z_mean is the S here
-        # D_loss_logits = tf.nn.softmax_cross_entropy_with_logits(logits = model.ori_logits, labels = model.node_labels)
-        # self.D_loss = tf.reduce_mean(D_loss_logits)
-        ## weight decay
-             ## did not add now
 
-        ########
-        # self.D_min_op_clean = self.discriminate_optimizer.minimize(self.D_loss, global_step=global_step,
-        #                                                      var_list=discriminate_varlist)
 
-        ###################################### test the loss of the cutminlosstest part
-        ########
-        # if self.if_drop_edge == False:
-        #     self.D_min_op = self.discriminate_optimizer.minimize(self.D_mincut_loss_test, global_step=global_step,
-        #                                                          var_list=discriminate_varlist)
-        # else:
-        #     self.D_min_op = self.discriminate_optimizer.minimize(self.D_mincut_loss, global_step=global_step,
-        #                                                          var_list=discriminate_varlist)
-        ## this part is not correct now
-        # self.correct_prediction = tf.equal(tf.cast(tf.greater_equal(tf.sigmoid(model.realD_tilde), 0.5), tf.int32),
-        #                                    tf.cast(tf.ones_like(model.realD_tilde), tf.int32))
-        # self.D_accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
-        return
+
+    def reg_loss_many_samples(self, model, G_comm_loss):
+        for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
+            self.reg = 0
+            ## the Laplacian loss
+            x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            self.g_delta = rowsum - model.adj_ori_dense
+            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
+            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            ###### grab non zero part
+            # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            ###### norm version
+            # self.reg = tf.square(tf.norm(self.reg_mat))
+            ###### trace version
+            self.reg = tf.trace(self.reg_mat)
+            ####################
+            # self.reg = self.reg * 1e-9
+            self.reg = self.reg
+            # self.reg = tf.reduce_mean(self.reg_mat)
+            self.reg = 1 / (self.reg + 1e-10)
+
+            ## self.G_comm_loss
+            eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            eij = tf.reduce_sum(tf.log(eij))
+            # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            if idx == 0:
+                G_comm_loss =  (-1) * self.reg * eij
+            G_comm_loss += (-1) * self.reg * eij
+        G_comm_loss = G_comm_loss / len(model.x_tilde_list)
+        return G_comm_loss
+
+    def reg_loss_many_samples_reward_per(self, model, G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        self.reward_list = []
+        self.percentage_all = 0
+        for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
+            self.reg = 0
+
+            ## the Laplacian loss
+            x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            self.g_delta = rowsum - model.adj_ori_dense
+            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
+            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            ###### grab non zero part
+            # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            ###### norm version
+            # self.reg = tf.square(tf.norm(self.reg_mat))
+            ###### trace version
+            self.reg = tf.trace(self.reg_mat)
+            ####################
+            #self.reg = self.reg * 1e-9
+            self.reg = self.reg
+            #self.reg = tf.log(self.reg + 1)
+            # self.reg = tf.reduce_mean(self.reg_mat)
+            self.reg = 1 / (self.reg + 1e-10)
+
+            ## self.G_comm_loss
+            eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            eij = tf.reduce_sum(tf.log(eij))
+            # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            if idx == 0:
+                G_comm_loss_mean = self.reg * eij
+                self.reward_list.append(self.reg * eij)
+                self.percentage_all = model.reward_percent_list[idx]
+            else:
+                G_comm_loss_mean += self.reg * eij
+                self.reward_list.append(self.reg * eij)
+                self.percentage_all += model.reward_percent_list[idx]
+        G_comm_loss_mean = G_comm_loss_mean / len(model.x_tilde_list)
+        for idx, item in enumerate(self.reward_list):
+            if idx == 0:
+                G_comm_loss = (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+            else:
+                G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+        G_comm_loss = (-1) * G_comm_loss
+        return G_comm_loss
+    pass
 
