@@ -18,7 +18,7 @@ np.random.seed(seed)
 tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
@@ -72,7 +72,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 50, "The k edges to delete")
+flags.DEFINE_integer("k", 20, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -456,8 +456,7 @@ def train():
         if epoch % 50 == 0:
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-            G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg ,new_learning_rate],feed_dict=feed_dict)
-            laplacian_mat = sess.run([opt.reg_mat],feed_dict=feed_dict)
+            G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg,new_learning_rate],feed_dict=feed_dict)
             #new_adj = get_new_adj(feed_dict, sess, model)
             new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
             temp_pred = new_adj.reshape(-1)
@@ -465,8 +464,17 @@ def train():
             temp_ori = adj_label_sparse.todense().A.reshape(-1)
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
             print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
+            ## here is the debug part of the model#################################
+            laplacian_mat, reg_trace, reg_log, reward_ratio = sess.run([opt.reg_mat, opt.reg_trace, opt.reg_log, opt.new_percent_softmax], feed_dict=feed_dict)
             print("lap_mat is:")
-            print(laplacian_mat[0][:10])
+            print(np.diag(laplacian_mat))
+            print("reg_trace is:")
+            print(reg_trace)
+            print("reg_log is:")
+            print(reg_log)
+            print("reward_percentage")
+            print(reward_ratio)
+            ##########################################
             #';# check the D_loss_min
             if (G_loss < G_loss_min) and (epoch > 1000) and (if_save_model):
                 saver.save(sess, checkpoints_dir, global_step=epoch, write_meta_graph=False)
@@ -769,8 +777,9 @@ def test(saver,adj,features, meta_dir, checkpoints_dir):
 FLAGS = flags.FLAGS
 if __name__ == "__main__":
     #train_dis_base()
-    with open("results_50.txt", 'w+') as f_out:
-        for i in range(10):
+    current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
+    with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
+        for i in range(1):
             new_adj, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01

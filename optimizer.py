@@ -122,7 +122,11 @@ class Optimizergaegan(object):
             # eij = tf.reduce_sum(tf.log(eij))
             # #self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
             # self.G_comm_loss = (-1) * self.reg * eij
-            self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
+            ############### the loss functions we use to train the model
+            #self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
+            #self.G_comm_loss = self.reg_loss_many_samples_reward_per(model, self.G_comm_loss)
+            #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse(model, self.G_comm_loss)
+            self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
             if FLAGS.generator == "graphite":
@@ -173,7 +177,7 @@ class Optimizergaegan(object):
         G_comm_loss = G_comm_loss / len(model.x_tilde_list)
         return G_comm_loss
 
-    def reg_loss_many_samples_reward_per(self, model, G_comm_loss):
+    def reg_loss_many_samples_reward_ratio(self, model, G_comm_loss):
         """
         The loss with samples on delete x_tilde and add the reward percentage from Q learning
         :param self:
@@ -198,10 +202,13 @@ class Optimizergaegan(object):
             # self.reg = tf.square(tf.norm(self.reg_mat))
             ###### trace version
             self.reg = tf.trace(self.reg_mat)
+            self.reg_trace = self.reg
             ####################
             # self.reg = self.reg * 1e-9
             # self.reg = self.reg
             self.reg = tf.log(self.reg + 1)
+            #self.reg_log = self.reg
+            self.reg_log = self.reg * 0.1
             # self.reg = tf.reduce_mean(self.reg_mat)
             self.reg = 1 / (self.reg + 1e-10)
 
@@ -224,6 +231,129 @@ class Optimizergaegan(object):
             else:
                 G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
         G_comm_loss = (-1) * G_comm_loss
+        return G_comm_loss
+
+    def reg_loss_many_samples_reward_ratio_no_reverse(self, model, G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        self.reward_list = []
+        self.percentage_all = 0
+        for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
+            self.reg = 0
+
+            ## the Laplacian loss
+            x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            self.g_delta = rowsum - model.adj_ori_dense
+            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
+            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            ###### grab non zero part
+            # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            ###### norm version
+            # self.reg = tf.square(tf.norm(self.reg_mat))
+            ###### trace version
+            self.reg = tf.trace(self.reg_mat)
+            self.reg_trace = self.reg
+            ####################
+            # self.reg = self.reg * 1e-9
+            # self.reg = self.reg
+            self.reg = tf.log(self.reg + 1)
+            # self.reg_log = self.reg
+            self.reg_log = self.reg
+            # self.reg = tf.reduce_mean(self.reg_mat)
+            #self.reg = 1 / (self.reg + 1e-10)
+
+            ## self.G_comm_loss
+            #eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            #eij = tf.reduce_sum(tf.log(eij))
+            # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            if idx == 0:
+                G_comm_loss_mean = self.reg
+                self.reward_list.append(self.reg)
+                self.percentage_all = model.reward_percent_list[idx]
+            else:
+                G_comm_loss_mean += self.reg
+                self.reward_list.append(self.reg)
+                self.percentage_all += model.reward_percent_list[idx]
+        G_comm_loss_mean = G_comm_loss_mean / len(model.x_tilde_list)
+        #### if we need the softmax function for this part
+        #new_percent_softmax = tf.nn.softmax(model.reward_percent_list)
+        ########
+        for idx, item in enumerate(self.reward_list):
+            if idx == 0:
+                G_comm_loss = (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+                #G_comm_loss = (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
+            else:
+                G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+                #G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
+        #G_comm_loss = (-1) * G_comm_loss
+        return G_comm_loss
+
+    def reg_loss_many_samples_reward_ratio_no_reverse_softmax(self, model, G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        self.reward_list = []
+        self.percentage_all = 0
+        for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
+            self.reg = 0
+
+            ## the Laplacian loss
+            x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            self.g_delta = rowsum - model.adj_ori_dense
+            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
+            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            ###### grab non zero part
+            # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            ###### norm version
+            # self.reg = tf.square(tf.norm(self.reg_mat))
+            ###### trace version
+            self.reg = tf.trace(self.reg_mat)
+            self.reg_trace = self.reg
+            ####################
+            # self.reg = self.reg * 1e-9
+            # self.reg = self.reg
+            self.reg = tf.log(self.reg + 1)
+            # self.reg_log = self.reg
+            self.reg_log = self.reg
+            # self.reg = tf.reduce_mean(self.reg_mat)
+            #self.reg = 1 / (self.reg + 1e-10)
+
+            ## self.G_comm_loss
+            #eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            #eij = tf.reduce_sum(tf.log(eij))
+            # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            if idx == 0:
+                G_comm_loss_mean = self.reg
+                self.reward_list.append(self.reg)
+                self.percentage_all = model.reward_percent_list[idx]
+            else:
+                G_comm_loss_mean += self.reg
+                self.reward_list.append(self.reg)
+                self.percentage_all += model.reward_percent_list[idx]
+        G_comm_loss_mean = G_comm_loss_mean / len(model.x_tilde_list)
+        #### if we need the softmax function for this part
+        new_percent_softmax = tf.nn.softmax(model.reward_percent_list)
+        self.new_percent_softmax = new_percent_softmax
+        ########
+        for idx, item in enumerate(self.reward_list):
+            if idx == 0:
+                #G_comm_loss = (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+                G_comm_loss = (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
+            else:
+                #G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+                G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
+        #G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
     pass
 

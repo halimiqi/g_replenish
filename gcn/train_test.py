@@ -4,11 +4,13 @@ from __future__ import print_function
 import time
 import tensorflow as tf
 import numpy as np
-seed = 121   # last random seed is 141           0.703
-#random.seed(seed)
+# seed = 121   # last random seed is 141           0.703
+# #random.seed(seed)
+# np.random.seed(seed)
+# tf.set_random_seed(seed)
+seed = 132
 np.random.seed(seed)
 tf.set_random_seed(seed)
-
 
 from gcn.utils import *
 from gcn.models import GCN, MLP
@@ -42,7 +44,8 @@ def run(dataset,adj,name = "original", model_str = "gcn", epochs = 200, dropout 
     graph = tf.Graph()
     with graph.as_default():
         with tf.variable_scope(name) as scope:
-            _, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
+            #_, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
+            adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
 
             # Some preprocessing
             features = preprocess_features(features)
@@ -124,4 +127,8 @@ def run(dataset,adj,name = "original", model_str = "gcn", epochs = 200, dropout 
     return test_acc, acc_val
 
 if __name__ == "__main__":
-    run("citeseer")
+    seed = 132
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
+    adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data("citeseer")
+    run("citeseer", adj)

@@ -188,7 +188,8 @@ class gaegan(object):
         new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
         self.new_adj_for_del_softmax  = new_adj_for_del_softmax
         new_indexes = tf.multinomial(tf.log([new_adj_for_del_softmax]), FLAGS.k)  # this is the sample section
-        percentage = tf.reduce_prod(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))
+        #percentage = tf.reduce_prod(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))
+        percentage = tf.reduce_sum(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))     # using the reduce sum to replace the reduce product
         ######################## debug
         self.new_indexes = new_indexes
         ########################
