@@ -218,6 +218,44 @@ def baseline():
     print("**#" * 10)
     return testacc, testacc_new, testacc_new2, testacc_new3
 
+def baseline_add():
+    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_orig, name="original")
+    cos = features_csr.dot(features_csr.transpose())
+    norm = spnorm(features_csr, axis=1)
+    norm = norm[:,np.newaxis]
+    norm_mat = norm.dot(norm.T)
+    cos = cos / norm_mat
+    normalize_cos = 0.5 + 0.5 * cos
+    normalize_cos = np.array(normalize_cos)
+    zero_mat = np.zeros([num_nodes, num_nodes])
+    adj_orig_dense = adj_orig.todense()
+    flag_adj = np.triu(np.ones([num_nodes, num_nodes]), k=1) - np.triu(adj_orig_dense, k=1)
+    zero_mat[flag_adj > 0] = normalize_cos[flag_adj > 0]
+    one_mat = zero_mat.flatten()
+    one_mat[np.isnan(one_mat)] = 0
+    add_idx = np.argsort(one_mat)
+    add_idx = add_idx[-FLAGS.k:]
+    row_idx =add_idx %num_nodes
+    col_idx = add_idx // num_nodes
+    for idx in range(len(row_idx)):
+        adj_orig[row_idx, col_idx] = 1
+        adj_orig[col_idx, row_idx] = 1
+    testacc_new, valid_acc_new = GCN.run(FLAGS.dataset, adj_orig, name="original")
+    testacc_new2, valid_acc_new = GCN.run(FLAGS.dataset, adj_orig, name="original")
+    testacc_new3, valid_acc_new = GCN.run(FLAGS.dataset, adj_orig, name="original")
+    print("**#"*10)
+    print("original one")
+    print(testacc)
+    print("new one")
+    print(testacc_new)
+    print("new two")
+    print(testacc_new2)
+    print("new three")
+    print(testacc_new3)
+    print("**#" * 10)
+    return testacc, testacc_new, testacc_new2, testacc_new3
+
+
 
 # Train model
 def train():
@@ -404,7 +442,7 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/baseline/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
         for i in range(10):
-            testacc, testaccnew1, testaccnew2, testaccnew3 = baseline()
+            testacc, testaccnew1, testaccnew2, testaccnew3 = baseline_add()
             # testacc = 1.01
             # testaccnew1 = 1.01
             # testaccnew2 = 1.01
@@ -419,6 +457,6 @@ if __name__ == "__main__":
     #trained_dis_base(adj_norm, x_tilde_out, if_ori=False)
     # print("finish")
 
-    baseline()
+    # baseline()
     # base_line2()
     # base_line3()
