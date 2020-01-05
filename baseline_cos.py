@@ -19,7 +19,6 @@ np.random.seed(seed)
 tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
@@ -35,6 +34,7 @@ flags = tf.app.flags
 FLAGS = flags.FLAGS
 # flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
 flags.DEFINE_string("function_name", "add", "The function of the baseline. 'add' or 'delete'")
+flags.DEFINE_string("gpu_id", '0', "The gpu id used for baseline training ")
 flags.DEFINE_integer('n_class', 6, 'Number of epochs to train.')
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
 flags.DEFINE_integer('epochs', 1200, 'Number of epochs to train.')
@@ -77,6 +77,8 @@ flags.DEFINE_string("trained_our_path", '191215231708', "The path for the traine
 flags.DEFINE_integer("k", 100, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
+################################
+os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu_id
 ###############################
 if_drop_edge = True
 if_save_model = False
