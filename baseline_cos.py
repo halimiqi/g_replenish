@@ -12,6 +12,7 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import norm as spnorm
 import time
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # set the random seed
 seed = 131   # last random seed is 141           0.703
 #random.seed(seed)
@@ -20,7 +21,7 @@ tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
 from tensorflow.python.client import device_lib
-print(device_lib.list_local_devices())
+#print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
 from gaegan import gaegan
 from optimizer import Optimizergaegan
@@ -78,7 +79,6 @@ flags.DEFINE_integer("k", 100, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ################################
-os.environ["CUDA_VISIBLE_DEVICES"] = FLAGS.gpu_id
 ###############################
 if_drop_edge = True
 if_save_model = False

@@ -8,9 +8,6 @@ import numpy as np
 # #random.seed(seed)
 # np.random.seed(seed)
 # tf.set_random_seed(seed)
-seed = 132
-np.random.seed(seed)
-tf.set_random_seed(seed)
 
 from gcn.utils import *
 from gcn.models import GCN, MLP
@@ -40,15 +37,12 @@ FLAGS = flags.FLAGS
 
 # Load data
 def run(dataset,adj,name = "original", model_str = "gcn", epochs = 200, dropout = 0.5, early_stopping = 30):
-    seed = 123
-    np.random.seed(seed)
-    tf.set_random_seed(seed)
     tf.reset_default_graph()
     graph = tf.Graph()
     with graph.as_default():
         with tf.variable_scope(name) as scope:
-            #_, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
-            adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
+            _, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
+            #adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
 
             # Some preprocessing
             features = preprocess_features(features)
