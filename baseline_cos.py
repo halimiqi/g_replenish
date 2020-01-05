@@ -34,6 +34,7 @@ from ops import print_mu, print_mu2
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 # flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
+flags.DEFINE_string("function_name", "add", "The function of the baseline. 'add' or 'delete'")
 flags.DEFINE_integer('n_class', 6, 'Number of epochs to train.')
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
 flags.DEFINE_integer('epochs', 1200, 'Number of epochs to train.')
@@ -449,7 +450,7 @@ def train():
 ## delete edges between the targets and 1add some
 if __name__ == "__main__":
     #train_dis_base()
-    function_name = "add"  ## add delete
+    function_name = FLAGS.function_name  ## add delete
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/baseline/results_%d_%s_%s.txt"%(FLAGS.k, current_time, function_name), 'w+') as f_out:
         for i in range(10):
