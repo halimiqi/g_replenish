@@ -5,6 +5,7 @@ import scipy.sparse as sp
 import numpy as np
 from scipy.sparse.csgraph import connected_components
 from scipy import linalg
+import random
 import math
 #from numba import jit
 
@@ -616,5 +617,31 @@ def k_edgedel(A, scores, dict_of_lists, k):
     adj = preprocess_graph(A)
     return adj, edge_pert
 
+def randomly_add_edges(adj, k):
+    num_nodes = adj.shape[0]
+    adj_out = adj.copy()
+    ## find the position which need to be add
+    adj_orig_dense = adj.todense()
+    flag_adj = np.triu(np.ones([num_nodes, num_nodes]), k=1) - np.triu(adj_orig_dense, k=1)
+    idx_list = np.argwhere(flag_adj == 1)
+    selected_idx_of_idx_list = np.random.choice(len(idx_list),size = k)
+    selected_idx = idx_list[selected_idx_of_idx_list]
+    adj_out[selected_idx[:,0],selected_idx[:,1]] = 1
+    adj_out[selected_idx[:, 1], selected_idx[:, 0]] = 1
+    return adj_out
 
+
+def randomly_delete_edges(adj, k):
+    num_nodes = adj.shape[0]
+    adj_out = adj.copy()
+    ## find the position which need to be add
+    adj_orig_dense = adj.todense()
+    flag_adj = np.triu(adj_orig_dense, k=1)
+    idx_list = np.argwhere(flag_adj == 1)
+    selected_idx_of_idx_list = np.random.choice(len(idx_list), size=k)
+    selected_idx = idx_list[selected_idx_of_idx_list]
+    adj_out[selected_idx[:, 0], selected_idx[:, 1]] = 0
+    adj_out[selected_idx[:, 1], selected_idx[:, 0]] = 0
+
+    return adj_out
 

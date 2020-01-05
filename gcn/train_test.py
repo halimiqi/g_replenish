@@ -40,6 +40,9 @@ FLAGS = flags.FLAGS
 
 # Load data
 def run(dataset,adj,name = "original", model_str = "gcn", epochs = 200, dropout = 0.5, early_stopping = 30):
+    seed = 123
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
     tf.reset_default_graph()
     graph = tf.Graph()
     with graph.as_default():
