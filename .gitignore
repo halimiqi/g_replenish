@@ -1,4 +1,5 @@
 checkpoints/
 data/
+.idea/
 __pycache__/
 gcn/__pycache__/
