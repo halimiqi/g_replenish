@@ -11,10 +11,12 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.sparse.linalg import norm as spnorm
 import time
+flags = tf.app.flags
+FLAGS = flags.FLAGS
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+#os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 # set the random seed
-seed = 131   # last random seed is 141           0.703
+seed = 142   # last random seed is 141           0.703
 #random.seed(seed)
 np.random.seed(seed)
 tf.set_random_seed(seed)
@@ -29,10 +31,7 @@ from gcn.utils import load_data
 #import GCN_3L as GCN
 from gcn import train_test as GCN
 from ops import print_mu, print_mu2
-
 # Settings
-flags = tf.app.flags
-FLAGS = flags.FLAGS
 # flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
 flags.DEFINE_string("function_name", "add", "The function of the baseline. 'add' or 'delete'")
 flags.DEFINE_string("gpu_id", '0', "The gpu id used for baseline training ")

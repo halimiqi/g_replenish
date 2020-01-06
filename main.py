@@ -1,7 +1,7 @@
 import tensorflow as tf
 import random
 #from utils import mkdir_p
-
+from utils import randomly_add_edges, randomly_delete_edges
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
@@ -12,7 +12,7 @@ import scipy.sparse as sp
 import time
 import os
 # set the random seed
-seed = 131   # last random seed is 141           0.703
+seed = 142   # last random seed is 141           0.703
 #random.seed(seed)
 np.random.seed(seed)
 tf.set_random_seed(seed)
@@ -93,9 +93,7 @@ adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_da
 # _A_obs = _A_obs + _A_obs.T #变GCN_ori as GCN
 # _A_obs[_A_obs > 1] = 1
 # adj = _A_obs
-adj_orig = adj
-adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]), shape=adj_orig.shape)   # delete self loop
-adj_orig.eliminate_zeros()
+
 adj_norm, adj_norm_sparse = preprocess_graph(adj)
 
 #_K = _z_obs.max()+1 #类别个数
@@ -155,9 +153,6 @@ cost_val = []
 acc_val = []
 val_roc_score = []
 
-adj_label = adj_orig + sp.eye(adj.shape[0])
-adj_label_sparse = adj_label
-adj_label = sparse_to_tuple(adj_label)
 
 def get_roc_score(edges_pos, edges_neg,feed_dict,sess, model, emb=None):
     if emb is None:
@@ -350,13 +345,25 @@ def trained_dis_base(adj_norm,new_adj, if_ori):
 
 # Train model
 def train():
+    adj_orig = adj
+    adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]),
+                                        shape=adj_orig.shape)  # delete self loop
+    adj_orig.eliminate_zeros()
+
+    adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)
+
     # train GCN first
-    adj_norm_sparse_csr = adj_norm_sparse.tocsr()
     # sizes = [FLAGS.gcn_hidden1, FLAGS.gcn_hidden2, n_class]
     # surrogate_model = GCN.GCN(sizes, adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
     # surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
     # ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
-    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_orig, name = "original")
+    testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, name = "clean")
+    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new, name = "original")
+    adj_norm, adj_norm_sparse = preprocess_graph(adj_new)
+    adj_norm_sparse_csr = adj_norm_sparse.tocsr()
+    adj_label = adj_new + sp.eye(adj.shape[0])
+    adj_label_sparse = adj_label
+    adj_label = sparse_to_tuple(adj_label)
 
     if_drop_edge = True
     ## set the checkpoint path
@@ -433,7 +440,7 @@ def train():
         modified_adj =  get_new_adj(feed_dict,sess, model)
         modified_adj = sp.csr_matrix(modified_adj)
         sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_new.npz", modified_adj)
-        sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_ori.npz", adj_orig)
+        sp.save_npz("transfer_new/transfer_1216_1/qq_5000_gaegan_ori.npz", adj_new)
         print("save the loaded adj")
     # print("before training generator")
     #####################################################
@@ -779,7 +786,7 @@ if __name__ == "__main__":
     #train_dis_base()
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
-        for i in range(1):
+        for i in range(5):
             new_adj, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01
