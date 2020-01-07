@@ -310,6 +310,7 @@ class Optimizergaegan(object):
             ## the Laplacian loss
             x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
             rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - model.adj_ori_dense
             temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
             self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)

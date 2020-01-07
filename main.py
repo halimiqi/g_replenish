@@ -72,7 +72,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 20, "The k edges to delete")
+flags.DEFINE_integer("k", 500, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -519,6 +519,10 @@ def train():
     ##### The final results ####
     print("*" * 30)
     print("the final results:\n")
+    print("*" * 30)
+    print("The clean acc is: ")
+    print(testacc_clean)
+    print("*#" * 15)
     print("The original acc is: ")
     print(testacc)
     print("*#"* 15)
@@ -530,7 +534,7 @@ def train():
     print("*#" * 15)
     print("The modified acc is : ")
     print(testacc_new3)
-    return new_adj, testacc, testacc_new, testacc_new2, testacc_new3
+    return new_adj,testacc_clean, testacc, testacc_new, testacc_new2, testacc_new3
 ## delete edges between the targets and 1add some
 def base_line():
     target_budget = np.random.choice(len(target_list), FLAGS.baseline_target_budget, replace = False)
@@ -786,13 +790,14 @@ if __name__ == "__main__":
     #train_dis_base()
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
+        f_out.write("clean_acc" +" "+ "original_acc" + ' ' + 'new_acc1'+ ' ' + 'new_acc2' + ' ' + 'new_acc3' + "\n")
         for i in range(5):
-            new_adj, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
+            new_adj,testacc_clean, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01
             # testaccnew2 = 1.01
             # testaccnew3 = 1.01
-            f_out.write(str(testacc)+ ' '+str(testaccnew1)+ ' '+str(testaccnew2)+ ' '+str(testaccnew3)+"\n")
+            f_out.write(str(testacc_clean)+" "+str(testacc)+ ' '+str(testaccnew1)+ ' '+str(testaccnew2)+ ' '+str(testaccnew3)+"\n")
 
     # print("The original base model")
     #trained_dis_base(adj_norm, adj_label, if_ori = True)  #

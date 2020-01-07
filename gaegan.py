@@ -88,73 +88,6 @@ class gaegan(object):
         return
 
 
-    def delete_k_edge_old(self,new_adj,ori_adj,  k = 1):
-        zeros = tf.zeros_like(new_adj)
-        bool_adj = tf.cast(ori_adj, tf.bool)
-        new_adj_for_del = tf.where(bool_adj, x =new_adj ,y =zeros ,name = "delete_mask")
-        new_adj_for_del = tf.reshape(new_adj_for_del, [-1])
-        new_adj = tf.reshape(new_adj, [-1])
-        new_indexes = tf.nn.top_k(new_adj_for_del, k = k)
-        #new_pos = tf.argmax(new_adj)
-        self.mask = tf.ones_like(new_adj, dtype = tf.float32)
-        self.mask_onehot = tf.one_hot(new_indexes[1], new_adj.shape[0], dtype=tf.float32)
-        self.mask = self.mask - self.mask_onehot
-        #self.update_mask= tf.assign(self.mask[new_pos], 0)
-        new_adj = tf.multiply(new_adj, self.mask)
-        new_adj= tf.reshape(new_adj, [self.n_samples ,self.n_samples])
-        return new_adj
-
-    def delete_k_edge_min(self, new_adj, ori_adj, k=3):
-        ones = tf.ones_like(new_adj)
-        max_value = tf.reduce_max(new_adj)
-        lower_bool_label = tf.linalg.band_part(ori_adj,-1,0)
-        upper_ori_label = ori_adj - lower_bool_label   # there is no diagnal
-        upper_bool_label = tf.cast(upper_ori_label, tf.bool)
-        ##############
-        self.upper_bool_label = upper_bool_label
-        ##############
-        new_adj_for_del = tf.where(upper_bool_label, x=new_adj, y=ones * max_value, name="delete_mask")
-        self.new_adj_for_del_test = max_value - new_adj_for_del
-        new_adj_for_del = max_value - new_adj_for_del
-        ori_adj_diag = tf.matrix_diag(tf.matrix_diag_part(ori_adj))  # diagnal matrix
-        new_adj_diag = tf.matrix_diag(tf.matrix_diag_part(new_adj))  # diagnal matrix
-        ori_adj_diag = tf.reshape(ori_adj_diag, [-1])
-        new_adj_diag = tf.reshape(new_adj_diag, [-1])
-        new_adj_flat = tf.reshape(new_adj, [-1])
-        ori_adj_flat = tf.reshape(ori_adj, [-1])
-        # doing the softmax function
-        new_adj_for_del_exp = tf.exp(new_adj_for_del)
-        new_adj_for_del_exp = tf.where(upper_bool_label, x=new_adj_for_del_exp, y=tf.zeros_like(new_adj_for_del_exp), name="softmax_mask")
-        new_adj_for_del_softmax = new_adj_for_del_exp / tf.reduce_sum(new_adj_for_del_exp)
-        new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
-        self.new_adj_for_del_softmax  = new_adj_for_del_softmax
-        new_indexes = tf.multinomial(tf.log([new_adj_for_del_softmax]), FLAGS.k)
-        ######################## debug
-
-        ########################
-        self.mask = upper_ori_label
-        self.mask = tf.reshape(self.mask, [-1])
-        for i in range(k):
-            self.mask_onehot = tf.one_hot(new_indexes[0][i], new_adj_flat.shape[0], dtype=tf.float32)
-            self.mask = self.mask - self.mask_onehot
-        ######################################  debug
-        #self.mask_test = tf.one_hot(new_indexes[1][2], new_adj_flat.shape[0], dtype=tf.float32)
-        ######################################
-        # self.update_mask= tf.assign(self.mask[new_pos], 0)
-        new_adj_out = tf.multiply(new_adj_flat, self.mask)   # the upper triangular
-        ori_adj_out = tf.multiply(ori_adj_flat, self.mask)
-        # add the transpose and the lower part of the model
-        #new_adj_out = new_adj_out + new_adj_diag
-        ori_adj_out = ori_adj_out + ori_adj_diag
-        ## having the softmax
-        #new_adj_out = tf.nn.softmax(new_adj_out)
-        #ori_adj_out = tf.nn.softmax(ori_adj_out)
-        #new_adj_out = tf.reshape(new_adj_out,[self.n_samples, self.n_samples] )
-        ori_adj_out = tf.reshape(ori_adj_out, [self.n_samples, self.n_samples])
-        # make the matrix system
-        #new_adj_out = new_adj_out + (tf.transpose(new_adj_out) - tf.matrix_diag(tf.matrix_diag_part(new_adj_out)))
-        ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
-        return new_adj_out, ori_adj_out
 
     def delete_k_edge_min_new(self, new_adj, ori_adj, k=3):  ## this is the newest delete part
         """
@@ -331,28 +264,37 @@ class gaegan(object):
         #new_adj_out = new_adj_out + (tf.transpose(new_adj_out) - tf.matrix_diag(tf.matrix_diag_part(new_adj_out)))
         ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
         return new_adj_out, ori_adj_out
-    def delete_k_edge(self,new_adj,ori_adj,  k = 3):
-        zeros = tf.zeros_like(new_adj)
-        bool_adj = tf.cast(ori_adj, tf.bool)
-        new_adj_for_del = tf.where(bool_adj, x =new_adj ,y =zeros ,name = "delete_mask")
-        new_adj_for_del = tf.reshape(new_adj_for_del, [-1])
-        new_adj_flat = tf.reshape(new_adj, [-1])
-        ori_adj_flat = tf.reshape(ori_adj, [-1])
 
-        new_indexes = tf.nn.top_k(new_adj_for_del, k = k)
-        self.new_indexes = tf.nn.top_k(new_adj_for_del, k=k)
-        self.mask = tf.reshape(ori_adj, [-1])
-        for i in range(k):
-            self.mask_onehot = tf.one_hot(new_indexes[1][i], new_adj_flat.shape[0], dtype=tf.float32)
-            self.mask = self.mask - self.mask_onehot
-        self.mask_test = tf.one_hot(new_indexes[1][2], new_adj_flat.shape[0], dtype=tf.float32)
-        #self.update_mask= tf.assign(self.mask[new_pos], 0)
-        new_adj_out = tf.multiply(new_adj_flat, self.mask)
-        ori_adj_out = tf.multiply(ori_adj_flat, self.mask)
-        new_adj_out= tf.reshape(new_adj_out, [self.n_samples ,self.n_samples])
-        ori_adj_out = tf.reshape(ori_adj_out, [self.n_samples ,self.n_samples])
-        return new_adj_out, ori_adj_out
+    def flip_features(self, ori_adj,features, Z, k = 10):
+        ## firstly we change the first nodes
+        node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.matmul(ori_adj, Z), Z, transpose_b=True))))
+        new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
 
+        Z_tilde = FullyConnect(features.shape[1], scope = "flip_weight")(Z)
+        Z_new = features + Z_tilde
+        rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
+        rowsum = tf.matrix_diag(rowsum)
+        D_A = rowsum - self.adj_ori_dense
+        feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)))
+        new_indexes_features = tf.multinomial(tf.log([feature_flip_dist]), FLAGS.k)  # this is the sample section
+        mask = tf.matrix()
+        new_features = features
+        for i in range(FLAGS.k):
+            delete_mask_idx = -1 * tf.ones(self.n_samples, dtype=tf.int32)
+            delete_maskidx_onehot = tf.one_hot(new_indexes[0][i], self.n_samples, dtype=tf.int32)
+            col_idx = (1 + new_indexes_features[0][i])
+            col_idx = tf.cast(col_idx, tf.int32)
+            delete_mask_idx = delete_mask_idx + col_idx * delete_maskidx_onehot
+            delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=features.shape[1], dtype=tf.int32)
+            delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
+            new_features = tf.where(delete_onehot_mask, x=tf.ones_like(features) - features, y=features,
+                                 name="softmax_mask")
+        return new_features
+        ## then we change the features
+
+
+
+        return
     def encoder(self, inputs):
         with tf.variable_scope('encoder') as scope:
             self.hidden1 = GraphConvolutionSparse(input_dim=self.input_dim,
