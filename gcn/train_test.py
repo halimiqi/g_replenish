@@ -36,7 +36,7 @@ FLAGS = flags.FLAGS
 # flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
 
 # Load data
-def run(dataset,adj,name = "original", model_str = "gcn", epochs = 200, dropout = 0.5, early_stopping = 30,seed = 142):
+def run(dataset,adj,features, name = "original", model_str = "gcn", epochs = 200, dropout = 0.5, early_stopping = 30,seed = 142):
     tf.reset_default_graph()
     graph = tf.Graph()
     with graph.as_default():
@@ -44,7 +44,7 @@ def run(dataset,adj,name = "original", model_str = "gcn", epochs = 200, dropout 
         np.random.seed(seed)
         tf.set_random_seed(seed)
         with tf.variable_scope(name) as scope:
-            _, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
+            _, _, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
             #adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(dataset)
 
             # Some preprocessing

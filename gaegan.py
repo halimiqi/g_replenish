@@ -80,7 +80,7 @@ class gaegan(object):
             self.x_tilde_deleted = self.x_tilde_out
             self.new_adj_without_norm = self.new_adj_output
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
-
+            self.new_fliped_features = self.flip_features(self.adj_ori, self.inputs, self.z_x, k = FLAGS.k)
 
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
         # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
@@ -266,35 +266,35 @@ class gaegan(object):
         return new_adj_out, ori_adj_out
 
     def flip_features(self, ori_adj,features, Z, k = 10):
+        feature_dense = tf.sparse_tensor_to_dense(features)
         ## firstly we change the first nodes
-        node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.matmul(ori_adj, Z), Z, transpose_b=True))))
+        node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
         new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
 
-        Z_tilde = FullyConnect(features.shape[1], scope = "flip_weight")(Z)
-        Z_new = features + Z_tilde
+        Z_tilde = FullyConnect(output_size= self.input_dim, scope = "flip_weight")(Z)
+        Z_new = feature_dense + Z_tilde
         rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
         rowsum = tf.matrix_diag(rowsum)
         D_A = rowsum - self.adj_ori_dense
-        feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)))
-        new_indexes_features = tf.multinomial(tf.log([feature_flip_dist]), FLAGS.k)  # this is the sample section
-        mask = tf.matrix()
+        self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
+        self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))
+        new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k)  # this is the sample section
+        #mask = tf.matrix()
         new_features = features
+        ## then we change the features
         for i in range(FLAGS.k):
             delete_mask_idx = -1 * tf.ones(self.n_samples, dtype=tf.int32)
             delete_maskidx_onehot = tf.one_hot(new_indexes[0][i], self.n_samples, dtype=tf.int32)
             col_idx = (1 + new_indexes_features[0][i])
             col_idx = tf.cast(col_idx, tf.int32)
             delete_mask_idx = delete_mask_idx + col_idx * delete_maskidx_onehot
-            delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=features.shape[1], dtype=tf.int32)
+            delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=self.input_dim, dtype=tf.int32)
             delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
-            new_features = tf.where(delete_onehot_mask, x=tf.ones_like(features) - features, y=features,
+            new_features = tf.where(delete_onehot_mask, x=tf.ones_like(feature_dense) - feature_dense, y=feature_dense,
                                  name="softmax_mask")
+
         return new_features
-        ## then we change the features
 
-
-
-        return
     def encoder(self, inputs):
         with tf.variable_scope('encoder') as scope:
             self.hidden1 = GraphConvolutionSparse(input_dim=self.input_dim,
