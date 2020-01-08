@@ -48,8 +48,11 @@ class gaegan(object):
         # build the model
         self.z_x = self.encoder(self.inputs)
         self.x_tilde = 0
-        self.x_tilde_list = []
+        self.new_adj_outlist = []
+        self.new_features_list = []
         self.reward_percent_list = []
+        self.percentage_list_all = []
+        self.percentage_fea = []
         self.adj_dense = tf.sparse_tensor_to_dense(self.adj, default_value=0, validate_indices=False, name=None) # normalize adj
         self.new_adj_output = self.adj_dense
         self.adj_ori_dense = tf.sparse_tensor_to_dense(self.adj_ori, default_value=0, validate_indices=False, name=None) #A + I
@@ -68,20 +71,28 @@ class gaegan(object):
             #self.x_tilde, self.new_adj_output = self.delete_k_edge(self.x_tilde, self.adj_ori_dense)  # convert the original graph with k edges
             #self.x_tilde = np.zeros
             self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
-            self.x_tilde_list.append(self.x_tilde_out)
+            self.new_adj_outlist.append(self.new_adj_output)
             self.reward_percent_list.append(reward_per)
+            self.new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
+            self.new_features_list.append(self.new_fliped_features)
+            self.percentage_list_all.append(reward_per + percentage_features)
+            self.percentage_fea.append(percentage_features)
+            ############### do the sample several times
             for time in range(max(FLAGS.delete_edge_times-1, 0)):
-                temp_x_tilde_out, _,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
+                temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
                                                                                    k=FLAGS.k)
-                self.x_tilde_list.append(temp_x_tilde_out)
+                self.new_adj_outlist.append(new_adj_out)
                 self.reward_percent_list.append(reward_per)
+                new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = True)
+                self.new_features_list.append(new_fliped_features)
+                self.percentage_list_all.append(percentage_features+ reward_per)
+                self.percentage_fea.append(percentage_features)
             #self.x_tilde, self.new_adj_output = self.delete_k_edge_max(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
             #self.x_tilde_deleted = self.x_tilde_out
             self.x_tilde_deleted = self.x_tilde_out
             self.new_adj_without_norm = self.new_adj_output
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
-            self.new_fliped_features = self.flip_features(self.adj_ori, self.inputs, self.z_x, k = FLAGS.k)
-
+            
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
         # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
         # _,self.mod_pred,_ = self.d_GCN(self.inputs, self.adj_dense, reuse = True)
@@ -265,35 +276,42 @@ class gaegan(object):
         ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
         return new_adj_out, ori_adj_out
 
-    def flip_features(self, ori_adj,features, Z, k = 10):
-        feature_dense = tf.sparse_tensor_to_dense(features)
+    def flip_features(self, ori_adj,features, Z, k = 10, reuse = tf.AUTO_REUSE):
+        with tf.variable_scope("flip_fea") as scope:
+            if reuse == True:
+                scope.reuse_variables()
+            percentage_all = 0
+            feature_dense = tf.sparse_tensor_to_dense(features)
         ## firstly we change the first nodes
-        node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
-        new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
-
-        Z_tilde = FullyConnect(output_size= self.input_dim, scope = "flip_weight")(Z)
-        Z_new = feature_dense + Z_tilde
-        rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
-        rowsum = tf.matrix_diag(rowsum)
-        D_A = rowsum - self.adj_ori_dense
-        self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
-        self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))
-        new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k)  # this is the sample section
-        #mask = tf.matrix()
-        new_features = features
-        ## then we change the features
-        for i in range(FLAGS.k):
-            delete_mask_idx = -1 * tf.ones(self.n_samples, dtype=tf.int32)
-            delete_maskidx_onehot = tf.one_hot(new_indexes[0][i], self.n_samples, dtype=tf.int32)
-            col_idx = (1 + new_indexes_features[0][i])
-            col_idx = tf.cast(col_idx, tf.int32)
-            delete_mask_idx = delete_mask_idx + col_idx * delete_maskidx_onehot
-            delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=self.input_dim, dtype=tf.int32)
-            delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
-            new_features = tf.where(delete_onehot_mask, x=tf.ones_like(feature_dense) - feature_dense, y=feature_dense,
+            node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
+            new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
+            percentage_node = tf.reduce_sum(tf.log(tf.gather(node_sample_dist, new_indexes[0]))) 
+            Z_tilde = FullyConnect(output_size= self.input_dim, scope = "flip_weight")(Z)
+            Z_new = feature_dense + Z_tilde
+            rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
+            rowsum = tf.matrix_diag(rowsum)
+            D_A = rowsum - self.adj_ori_dense
+            self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
+            self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))
+            new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k)  # this is the sample section
+            percentage_feature = tf.reduce_sum(tf.log(tf.gather(self.feature_flip_dist, new_indexes_features[0])))
+            #mask = tf.matrix()
+            new_features = features
+            ## then we change the features
+            for i in range(FLAGS.k):
+                delete_mask_idx = -1 * tf.ones(self.n_samples, dtype=tf.int32)
+                delete_maskidx_onehot = tf.one_hot(new_indexes[0][i], self.n_samples, dtype=tf.int32)
+                col_idx = (1 + new_indexes_features[0][i])
+                col_idx = tf.cast(col_idx, tf.int32)
+                delete_mask_idx = delete_mask_idx + col_idx * delete_maskidx_onehot
+                delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=self.input_dim, dtype=tf.int32)
+                delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
+                new_features = tf.where(delete_onehot_mask, x=tf.ones_like(feature_dense) - feature_dense, y=feature_dense,
                                  name="softmax_mask")
+        ## now calculate the overall percentage
+            percentage_all = percentage_node + percentage_feature
 
-        return new_features
+        return new_features, percentage_all
 
     def encoder(self, inputs):
         with tf.variable_scope('encoder') as scope:

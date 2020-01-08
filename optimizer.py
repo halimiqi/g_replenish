@@ -126,7 +126,7 @@ class Optimizergaegan(object):
             #self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_per(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse(model, self.G_comm_loss)
-            self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
+            self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
             if FLAGS.generator == "graphite":
@@ -366,15 +366,15 @@ class Optimizergaegan(object):
         """
         self.reward_list = []
         self.percentage_all = 0
-        for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
+        for idx, adj_deleted in enumerate(model.new_adj_outlist):
             self.reg = 0
-            ## the Laplacian loss
-            x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            ## the Laplacian loss here we should use the real new one
+            adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
             rowsum = tf.matrix_diag(rowsum)
-            self.g_delta = rowsum - model.adj_ori_dense
-            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
-            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            self.g_delta = rowsum - adj_deleted_mat
+            temp = tf.matmul(tf.transpose(model.new_features_list[idx]), self.g_delta)
+            self.reg_mat = tf.matmul(temp, model.new_features_list[idx])
             ###### grab non zero part
             # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
             ###### norm version
@@ -402,14 +402,14 @@ class Optimizergaegan(object):
             if idx == 0:
                 G_comm_loss_mean = self.reg
                 self.reward_list.append(self.reg)
-                self.percentage_all = model.reward_percent_list[idx]
+                self.percentage_all = model.percentage_list_all[idx]
             else:
                 G_comm_loss_mean += self.reg
                 self.reward_list.append(self.reg)
-                self.percentage_all += model.reward_percent_list[idx]
-        G_comm_loss_mean = G_comm_loss_mean / len(model.x_tilde_list)
+                self.percentage_all += model.percentage_list_all[idx]
+        G_comm_loss_mean = G_comm_loss_mean / len(model.new_adj_outlist)
         #### if we need the softmax function for this part
-        new_percent_softmax = tf.nn.softmax(model.reward_percent_list)
+        new_percent_softmax = tf.nn.softmax(model.percentage_list_all)
         self.new_percent_softmax = new_percent_softmax
         ########
         for idx, item in enumerate(self.reward_list):
