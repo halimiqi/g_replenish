@@ -304,15 +304,18 @@ class Optimizergaegan(object):
         """
         self.reward_list = []
         self.percentage_all = 0
-        for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
+        G_comm_loss_mean = 0
+        for idx, adj_deleted in enumerate(model.new_adj_outlist):
             self.reg = 0
+
             ## the Laplacian loss
-            x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
             rowsum = tf.matrix_diag(rowsum)
-            self.g_delta = rowsum - model.adj_ori_dense
-            temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
-            self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
+            self.g_delta = rowsum - adj_deleted_mat
+            feature_dense = tf.sparse_tensor_to_dense(model.inputs)
+            temp = tf.matmul(tf.transpose(feature_dense), self.g_delta)
+            self.reg_mat = tf.matmul(temp, feature_dense)
             ###### grab non zero part
             # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
             ###### norm version
@@ -383,8 +386,8 @@ class Optimizergaegan(object):
             self.reg = tf.trace(self.reg_mat)
             self.reg_trace = self.reg
             ####################  feature loss ###################
-            self.reg_feature_trace = tf.trace(model.feature_reg)
-            self.reg = self.reg_trace + self.reg_feature_trace
+            # self.reg_feature_trace = tf.trace(model.feature_reg)
+            # self.reg = self.reg_trace + self.reg_feature_trace
             ######################################################
             # self.reg = self.reg * 1e-9
             # self.reg = self.reg

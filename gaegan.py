@@ -281,7 +281,7 @@ class gaegan(object):
             if reuse == True:
                 scope.reuse_variables()
             percentage_all = 0
-            feature_dense = tf.sparse_tensor_to_dense(features)
+            self.feature_dense = tf.sparse_tensor_to_dense(features)
         ## firstly we change the first nodes
             node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
             new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section

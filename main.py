@@ -603,7 +603,7 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
         f_out.write("clean_acc" +" "+ "original_acc" + ' ' + 'modify_adj'+ ' ' + 'modify_feature' + ' ' + 'modify_both' + "\n")
-        for i in range(5):
+        for i in range(3):
             new_adj,testacc_clean, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01
