@@ -287,7 +287,7 @@ class gaegan(object):
             new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
             percentage_node = tf.reduce_sum(tf.log(tf.gather(node_sample_dist, new_indexes[0]))) 
             Z_tilde = FullyConnect(output_size= self.input_dim, scope = "flip_weight")(Z)
-            Z_new = feature_dense + Z_tilde
+            Z_new =self.feature_dense + Z_tilde
             rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
             rowsum = tf.matrix_diag(rowsum)
             D_A = rowsum - self.adj_ori_dense
@@ -306,7 +306,7 @@ class gaegan(object):
                 delete_mask_idx = delete_mask_idx + col_idx * delete_maskidx_onehot
                 delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=self.input_dim, dtype=tf.int32)
                 delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
-                new_features = tf.where(delete_onehot_mask, x=tf.ones_like(feature_dense) - feature_dense, y=feature_dense,
+                new_features = tf.where(delete_onehot_mask, x=tf.ones_like(self.feature_dense) - self.feature_dense, y=self.feature_dense,
                                  name="softmax_mask")
         ## now calculate the overall percentage
             percentage_all = percentage_node + percentage_feature

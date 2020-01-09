@@ -126,7 +126,9 @@ class Optimizergaegan(object):
             #self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_per(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse(model, self.G_comm_loss)
-            self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
+            self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
+            #self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
+
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
             if FLAGS.generator == "graphite":
@@ -344,7 +346,7 @@ class Optimizergaegan(object):
                 G_comm_loss_mean += self.reg
                 self.reward_list.append(self.reg)
                 self.percentage_all += model.reward_percent_list[idx]
-        G_comm_loss_mean = G_comm_loss_mean / len(model.x_tilde_list)
+        G_comm_loss_mean = G_comm_loss_mean / len(model.new_adj_outlist)
         #### if we need the softmax function for this part
         new_percent_softmax = tf.nn.softmax(model.reward_percent_list)
         self.new_percent_softmax = new_percent_softmax

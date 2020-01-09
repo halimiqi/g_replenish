@@ -12,13 +12,13 @@ import scipy.sparse as sp
 import time
 import os
 # set the random seed
-seed = 142   # last random seed is 141           0.703
+seed = 152   # last random seed is 141           0.703
 #random.seed(seed)
 np.random.seed(seed)
 tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
@@ -72,7 +72,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 100, "The k edges to delete")
+flags.DEFINE_integer("k", 50, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -603,7 +603,7 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
         f_out.write("clean_acc" +" "+ "original_acc" + ' ' + 'modify_adj'+ ' ' + 'modify_feature' + ' ' + 'modify_both' + "\n")
-        for i in range(3):
+        for i in range(2):
             new_adj,testacc_clean, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01
