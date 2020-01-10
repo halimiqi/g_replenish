@@ -101,13 +101,6 @@ _K = y_train.shape[1]
 features_normlize = normalize(features.tocsr(), axis=0, norm='max')
 features = sp.csr_matrix(features_normlize)
 
-#add comm_label this time to get the good accuracy
-# node_labels = np.eye(_K)[_z_obs] #把标签转化为one-hot
-
-
-# Store original adjacency matrix (without diagonal entries) for later
-
-
 # adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
 # adj = adj_train
 if FLAGS.features == 0:
@@ -132,12 +125,6 @@ features_nonzero = features[1].shape[0]
 n_class = _K
 
 gpu_id = 1
-# np.random.seed(seed)
-# split_train, split_val, split_unlabeled = utils.train_val_test_split_tabular(np.arange(num_nodes),
-#                                                                        train_size=train_share,
-#                                                                        val_size=val_share,
-#                                                                        test_size=unlabeled_share,
-#                                                                        stratify=_z_obs)
 
 # Create model
 

@@ -277,7 +277,7 @@ class gaegan(object):
         return new_adj_out, ori_adj_out
 
     def flip_features(self, ori_adj,features, Z, k = 10, reuse = tf.AUTO_REUSE):
-        with tf.variable_scope("flip_fea") as scope:
+        with tf.variable_scope("generate_flip_fea") as scope:
             if reuse == True:
                 scope.reuse_variables()
             percentage_all = 0

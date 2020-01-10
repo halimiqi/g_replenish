@@ -126,8 +126,8 @@ class Optimizergaegan(object):
             #self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_per(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse(model, self.G_comm_loss)
-            self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
-            #self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
+            #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
+            self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
 
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
@@ -387,12 +387,6 @@ class Optimizergaegan(object):
             ###### trace version
             self.reg = tf.trace(self.reg_mat)
             self.reg_trace = self.reg
-            ####################  feature loss ###################
-            # self.reg_feature_trace = tf.trace(model.feature_reg)
-            # self.reg = self.reg_trace + self.reg_feature_trace
-            ######################################################
-            # self.reg = self.reg * 1e-9
-            # self.reg = self.reg
             #self.reg = tf.log(self.reg + 1)
             self.reg = tf.log(self.reg)
             # self.reg_log = self.reg
