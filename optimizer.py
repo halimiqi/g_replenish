@@ -59,78 +59,19 @@ class Optimizergaegan(object):
         # encoder_varlist = [var for var in tf.trainable_variables() if 'encoder' in var.name]
         generate_varlist = [var for var in tf.trainable_variables() if (
                     'generate' in var.name) or ('encoder' in var.name)]  # the first part is generator and the second part is discriminator
+        generate_varlist = [var for var in generate_varlist if (
+                'nograd' not in var.name)]
+
         discriminate_varlist = [var for var in tf.trainable_variables() if 'discriminate' in var.name]
-        #################### the new G_comm_loss
-        # for targets in target_list:
-        #     targets_indices = [[x] for x in targets]
-        #     #self.G_target_pred = model.vaeD_tilde[targets, :]
-        #     self.G_target_pred = tf.gather_nd(model.vaeD_tilde, targets_indices)
-        #     ## calculate the KL divergence
-        #     for i in range(len(targets)):
-        #         for j in range(i + 1, len(targets)):
-        #             if (i == 0) and (j == 1):
-        #                 self.G_comm_loss_KL = -1 * tf.reduce_sum(
-        #                     (self.G_target_pred[i] * tf.log(self.G_target_pred[i] / self.G_target_pred[j])))
-        #             else:
-        #                 self.G_comm_loss_KL += -1*tf.reduce_sum((self.G_target_pred[i] * tf.log(self.G_target_pred[i] / self.G_target_pred[j])))
-                    ## to maximize the KL is to minimize the neg KL
-        ######################################################
-
-
-        ######################################################
-        # if if_drop_edge == True:
-        #     self.mu = 0
-        #     ## the new G_comm_loss
-        #     for idx, targets in enumerate(target_list):
-        #         target_pred = tf.gather(model.vaeD_tilde, targets)
-        #         max_index = tf.argmax(target_pred, axis=1)
-        #         max_index = tf.cast(max_index, tf.int32)
-        #         if idx == 0:
-        #             self.mu = ((len(tf.unique(max_index)) - 1) / (
-        #                         np.max([FLAGS.n_clusters - 1, 1]) * (tf.reduce_max(tf.bincount(max_index)))))
-        #         else:
-        #             self.mu += ((len(tf.unique(max_index)) - 1) / (
-        #                         np.max([FLAGS.n_clusters - 1, 1]) * (tf.reduce_max(tf.bincount(max_index)))))
-        #     self.mu = tf.cast(self.mu, tf.float32)
-        #     eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
-        #     eij = tf.reduce_sum(tf.log(eij))
-        #     #self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
-        #     self.G_comm_loss = (-1) * self.mu * eij
-        ###################################################### the reg loss G loss for the new graph  remember to add negative mark
         if if_drop_edge == True:
-            # self.reg = 0
-            # ## the Laplacian loss
-            # x_tilde_deleted_mat = tf.reshape(model.x_tilde_deleted, shape = [self.num_nodes, self.num_nodes])
-            # rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
-            # self.g_delta = rowsum - model.adj_ori_dense
-            # temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
-            # self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
-            # ###### grab non zero part
-            # #self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
-            # ###### norm version
-            # #self.reg = tf.square(tf.norm(self.reg_mat))
-            # ###### trace version
-            # self.reg = tf.square(tf.trace(self.reg_mat))
-            # ####################
-            # # self.reg = self.reg * 1e-9
-            # self.reg = self.reg
-            # #self.reg = tf.reduce_mean(self.reg_mat)
-            # self.reg = 1 / (self.reg + 1e-10)
-            #
-            # ## self.G_comm_loss
-            # eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
-            # eij = tf.reduce_sum(tf.log(eij))
-            # #self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
-            # self.G_comm_loss = (-1) * self.reg * eij
-            ############### the loss functions we use to train the model
             #self.G_comm_loss = self.reg_loss_many_samples(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_per(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse(model, self.G_comm_loss)
             self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
-
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
+            self.grad_temp = self.generate_optimizer.compute_gradients(self.G_comm_loss)
             if FLAGS.generator == "graphite":
                 self.G_min_op = self.generate_optimizer.minimize(self.G_comm_loss, global_step=global_step,
                                                                  var_list=generate_varlist)
@@ -144,8 +85,6 @@ class Optimizergaegan(object):
                 self.G_min_op = self.generate_optimizer.minimize(self.G_comm_loss, global_step=global_step,
                                                                  var_list=generate_varlist)
             ######################################################
-
-
 
     def reg_loss_many_samples(self, model, G_comm_loss):
         for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
@@ -391,7 +330,6 @@ class Optimizergaegan(object):
             # self.reg_feature_trace = tf.trace(model.feature_reg)
             # self.reg = self.reg_trace + self.reg_feature_trace
             ######################################################
-            # self.reg = self.reg * 1e-9
             # self.reg = self.reg
             #self.reg = tf.log(self.reg + 1)
             self.reg = tf.log(self.reg)

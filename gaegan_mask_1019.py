@@ -48,10 +48,6 @@ class gaegan(object):
         # build the model
         self.z_x = self.encoder(self.inputs)
         self.x_tilde = 0
-        self.new_feature_list = []
-        self.new_idx_list = []
-        self.new_idx_nodelist = []
-        self.new_idx_fealist = []
         self.new_adj_outlist = []
         self.new_features_list = []
         self.reward_percent_list = []
@@ -74,36 +70,29 @@ class gaegan(object):
         if self.if_drop_edge != False:
             #self.x_tilde, self.new_adj_output = self.delete_k_edge(self.x_tilde, self.adj_ori_dense)  # convert the original graph with k edges
             #self.x_tilde = np.zeros
-            new_idx, self.new_adj_output, reward_per = self.delete_k_edge_min_assign(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
-            self.new_idx_list.append(new_idx)
-            self.new_adj_outlist.append(tf.Variable(self.new_adj_output, name = "nograd_adj"))
+            self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
+            self.new_adj_outlist.append(self.new_adj_output)
             self.reward_percent_list.append(reward_per)
-            #self.new_fliped_features, percentage_features, new_index_node, new_index_feature = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
-            self.new_fliped_features, percentage_features, new_index_node, new_index_feature = self.flip_features_assign(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
-
-            self.new_features_list.append(tf.Variable(self.new_fliped_features))
-            self.new_fliped_features = self.new_features_list[0]
+            self.new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
+            self.new_features_list.append(self.new_fliped_features)
             self.percentage_list_all.append(reward_per + percentage_features)
             self.percentage_fea.append(percentage_features)
             ############### do the sample several times
             for time in range(max(FLAGS.delete_edge_times-1, 0)):
-                # temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
-                #                                                                    k=FLAGS.k)
-                new_idxes, new_adj_out, reward_per = self.delete_k_edge_min_assign(self.x_tilde, self.adj_ori_dense,
-                                                                                       k=FLAGS.k)
-                self.new_idx_list.append(new_idxes)
-                self.new_adj_outlist.append(tf.Variable(new_adj_out, name = "nograd_adj"))
+                temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
+                                                                                   k=FLAGS.k)
+                # new_idxes, new_adj_out, reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
+                #                                                                        k=FLAGS.k)
+                # self.new_idx_list.append(new_idxes)
+                self.new_adj_outlist.append(new_adj_out)
                 self.reward_percent_list.append(reward_per)
-                #new_fliped_features, percentage_features,new_index_node,new_index_feature = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = True)
-                new_fliped_features, percentage_features, new_index_node, new_index_feature = self.flip_features_assign(
-                    self.adj_ori, self.inputs, self.z_x, k=FLAGS.k, reuse=True)
-                self.new_idx_nodelist.append(new_index_node)
-                self.new_idx_fealist.append(new_index_feature)
-                self.new_features_list.append(tf.Variable(new_fliped_features))
+                new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = True)
+                self.new_features_list.append(new_fliped_features)
                 self.percentage_list_all.append(percentage_features+ reward_per)
                 self.percentage_fea.append(percentage_features)
             #self.x_tilde, self.new_adj_output = self.delete_k_edge_max(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
             #self.x_tilde_deleted = self.x_tilde_out
+            self.x_tilde_deleted = self.x_tilde_out
             self.new_adj_without_norm = self.new_adj_output
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
             
@@ -221,11 +210,11 @@ class gaegan(object):
         ######################## debug
         self.new_indexes = new_indexes  # here we got the items  from outside
         ########################
-        self.mask = upper_bool_label  # the mask shows the entry which have edges
+        self.mask = upper_bool_label
 
         ### here we should use assign op to change the value we want
-        new_adj_out = -5*tf.ones_like(new_adj, dtype = tf.float32)
-        ori_adj_out = -5 * tf.ones_like(new_adj, dtype=tf.float32)
+        new_adj_out = -5*tf.ones(new_adj, dtype = tf.float32)
+        ori_adj_out = -5 * tf.ones(new_adj, dtype=tf.float32)
 
         # self.mask = tf.reshape(self.mask, [-1])
         # for i in range(k):
@@ -314,16 +303,67 @@ class gaegan(object):
         ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
         return new_adj_out, ori_adj_out
 
+    def delete_k_edge_max(self, new_adj, ori_adj, k=3):
+        zeros = tf.zeros_like(new_adj)
+        #max_value = tf.reduce_max(new_adj)
+        lower_bool_label = tf.linalg.band_part(ori_adj,-1,0)
+        upper_ori_label = ori_adj - lower_bool_label   # there is no diagnal
+        upper_bool_label = tf.cast(upper_ori_label, tf.bool)
+        new_adj_for_del = tf.where(upper_bool_label, x=new_adj, y=zeros , name="delete_mask")
+        #new_adj_for_del = tf.reshape(new_adj_for_del, [-1])
+        #new_adj_for_del = max_value - new_adj_for_del
+        ori_adj_diag = tf.matrix_diag(tf.matrix_diag_part(ori_adj))  # diagnal matrix
+        new_adj_diag = tf.matrix_diag(tf.matrix_diag_part(new_adj))  # diagnal matrix
+        ori_adj_diag = tf.reshape(ori_adj_diag, [-1])
+        new_adj_diag = tf.reshape(new_adj_diag, [-1])
+        new_adj_flat = tf.reshape(new_adj, [-1])
+        ori_adj_flat = tf.reshape(ori_adj, [-1])
+        #new_adj_for_del = tf.nn.softmax(new_adj_for_del)
+        # doing the softmax function
+        new_adj_for_del_exp = tf.exp(new_adj_for_del)
+        new_adj_for_del_exp = tf.where(upper_bool_label, x=new_adj_for_del_exp, y=tf.zeros_like(new_adj_for_del_exp),
+                                       name="softmax_mask")
+        new_adj_for_del_softmax = new_adj_for_del_exp / tf.reduce_sum(new_adj_for_del_exp)
+        new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
+        self.new_adj_for_del_softmax = new_adj_for_del_softmax
+        #new_indexes = tf.nn.top_k(new_adj_for_del, k=k)
+        new_indexes = tf.multinomial(tf.log([new_adj_for_del_softmax]), FLAGS.k)
+        ######################## debug
+        self.new_indexes = new_indexes
+        ########################
+        self.mask = upper_ori_label
+        self.mask = tf.reshape(self.mask, [-1])
+        for i in range(k):
+            self.mask_onehot = tf.one_hot(new_indexes[0][i], new_adj_flat.shape[0], dtype=tf.float32)
+            self.mask = self.mask - self.mask_onehot
+        ######################################  debug
+        #self.mask_test = tf.one_hot(new_indexes[1][2], new_adj_flat.shape[0], dtype=tf.float32)
+        ######################################
+        # self.update_mask= tf.assign(self.mask[new_pos], 0)
+        new_adj_out = tf.multiply(new_adj_flat, self.mask)   # the upper triangular
+        ori_adj_out = tf.multiply(ori_adj_flat, self.mask)
+        # add the transpose and the lower part of the model
+        #new_adj_out = new_adj_out + new_adj_diag
+        ori_adj_out = ori_adj_out + ori_adj_diag
+        ## having the softmax
+        # new_adj_out = tf.nn.softmax(new_adj_out)
+        # ori_adj_out = tf.nn.softmax(ori_adj_out)
+        #new_adj_out = tf.reshape(new_adj_out,[self.n_samples, self.n_samples] )
+        ori_adj_out = tf.reshape(ori_adj_out, [self.n_samples, self.n_samples])
+        # make the matrix system
+        #new_adj_out = new_adj_out + (tf.transpose(new_adj_out) - tf.matrix_diag(tf.matrix_diag_part(new_adj_out)))
+        ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
+        return new_adj_out, ori_adj_out
 
     def flip_features(self, ori_adj,features, Z, k = 10, reuse = tf.AUTO_REUSE):
-        with tf.variable_scope("generate_flip_fea") as scope:
+        with tf.variable_scope("flip_fea") as scope:
             if reuse == True:
                 scope.reuse_variables()
             percentage_all = 0
             self.feature_dense = tf.sparse_tensor_to_dense(features)
         ## firstly we change the first nodes
             node_sample_dist= tf.nn.softmax(tf.nn.sigmoid(tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
-            new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k, seed=1)  # this is the sample section
+            new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
             percentage_node = tf.reduce_sum(tf.log(tf.gather(node_sample_dist, new_indexes[0]))) 
             Z_tilde = FullyConnect(output_size= self.input_dim, scope = "flip_weight")(Z)
             Z_new =self.feature_dense + Z_tilde
@@ -332,7 +372,7 @@ class gaegan(object):
             D_A = rowsum - self.adj_ori_dense
             self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
             self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))
-            new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k, seed = 1)  # this is the sample section
+            new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k)  # this is the sample section
             percentage_feature = tf.reduce_sum(tf.log(tf.gather(self.feature_flip_dist, new_indexes_features[0])))
             #mask = tf.matrix()
             new_features = features
@@ -350,46 +390,7 @@ class gaegan(object):
         ## now calculate the overall percentage
             percentage_all = percentage_node + percentage_feature
 
-        return new_features, percentage_all,new_indexes, new_indexes_features
-
-    def flip_features_assign(self, ori_adj, features, Z, k=10, reuse=tf.AUTO_REUSE):
-        with tf.variable_scope("generate_flip_fea") as scope:
-            if reuse == True:
-                scope.reuse_variables()
-            percentage_all = 0
-            self.feature_dense = tf.sparse_tensor_to_dense(features)
-            ## firstly we change the first nodes
-            node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
-                tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
-            new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
-            percentage_node = tf.reduce_sum(tf.log(tf.gather(node_sample_dist, new_indexes[0])))
-            Z_tilde = FullyConnect(output_size=self.input_dim, scope="flip_weight")(Z)
-            Z_new = self.feature_dense + Z_tilde
-            rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
-            rowsum = tf.matrix_diag(rowsum)
-            D_A = rowsum - self.adj_ori_dense
-            self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
-            self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))
-            new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k,
-                                                  )  # this is the sample section
-            percentage_feature = tf.reduce_sum(tf.log(tf.gather(self.feature_flip_dist, new_indexes_features[0])))
-            # mask = tf.matrix()
-            new_features = -5 * tf.ones([self.n_samples,self.input_dim])
-            ## then we change the features
-            # for i in range(FLAGS.k):
-            #     delete_mask_idx = -1 * tf.ones(self.n_samples, dtype=tf.int32)
-            #     delete_maskidx_onehot = tf.one_hot(new_indexes[0][i], self.n_samples, dtype=tf.int32)
-            #     col_idx = (1 + new_indexes_features[0][i])
-            #     col_idx = tf.cast(col_idx, tf.int32)
-            #     delete_mask_idx = delete_mask_idx + col_idx * delete_maskidx_onehot
-            #     delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=self.input_dim, dtype=tf.int32)
-            #     delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
-            #     new_features = tf.where(delete_onehot_mask, x=tf.ones_like(self.feature_dense) - self.feature_dense,
-            #                             y=self.feature_dense,
-            #                             name="softmax_mask")
-            ## now calculate the overall percentage
-            percentage_all = percentage_node + percentage_feature
-        return new_features, percentage_all, new_indexes, new_indexes_features
+        return new_features, percentage_all
 
     def encoder(self, inputs):
         with tf.variable_scope('encoder') as scope:
@@ -469,6 +470,8 @@ class gaegan(object):
             #reconstructions = tf.reshape(reconstructions, [self.n_samples, self.n_samples])
         return reconstructions
 
+
+
     def discriminate_mock_detect(self, inputs,new_adj,  reuse = False):
         # this methods uses this part to mock the community detection algorithm
         with tf.variable_scope('discriminate') as scope:
@@ -542,6 +545,7 @@ class gaegan(object):
 
 
         return self.dis_z_mean_softmax, self.logits_gather, self.dis_z_mean
+
 
     def normalize_graph(self, adj):
         # convert adj into 0 and 1

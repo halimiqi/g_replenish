@@ -103,11 +103,7 @@ features = sp.csr_matrix(features_normlize)
 
 #add comm_label this time to get the good accuracy
 # node_labels = np.eye(_K)[_z_obs] #把标签转化为one-hot
-
-
 # Store original adjacency matrix (without diagonal entries) for later
-
-
 # adj_train, train_edges, val_edges, val_edges_false, test_edges, test_edges_false = mask_test_edges(adj)
 # adj = adj_train
 if FLAGS.features == 0:
@@ -142,12 +138,12 @@ gpu_id = 1
 # Create model
 
     #session part
-cost_val = []
-acc_val = []
-
-cost_val = []
-acc_val = []
-val_roc_score = []
+# cost_val = []
+# acc_val = []
+#
+# cost_val = []
+# acc_val = []
+# val_roc_score = []
 
 
 def get_new_adj(feed_dict, sess, model):
@@ -230,6 +226,7 @@ def train():
         os.mkdir(os.path.join(checkpoints_dir_base, current_time))
         saver.save(sess, checkpoints_dir)  # save the graph
 
+
     if restore_trained_our:
         checkpoints_dir_our = "./checkpoints"
         checkpoints_dir_our = os.path.join(checkpoints_dir_our, FLAGS.trained_our_path)
@@ -260,22 +257,42 @@ def train():
     G_loss_min = 1000
     for epoch in range(FLAGS.epochs):
         t = time.time()
-        # run Encoder's optimizer
+        #########################################
+        # using the assign to get the new adj list for delete
+        new_idx_list = sess.run(model.new_idx_list, feed_dict = feed_dict)
+        for i, new_idx in enumerate(new_idx_list):
+            temp_adj = adj_new.copy()
+            row_idx = new_idx // num_nodes
+            col_idx = new_idx % num_nodes
+            temp_adj[row_idx, col_idx] = 0
+            temp_adj[col_idx, row_idx] = 0
+            # assign the ori_adj_out
+            model.new_adj_outlist[i].assign(temp_adj.todense()).eval(session = sess)
+        ##########################################
+        ## assign for features
+        new_idx_node = sess.run(model.new_idx_nodelist, feed_dict = feed_dict)
+        new_idx_fea = sess.run(model.new_idx_fealist, feed_dict = feed_dict)
+        for i, new_idx in enumerate(new_idx_node):
+            temp_fea = features_csr.copy()
+            row_idx = new_idx_node[i]
+            col_idx = new_idx_fea[i]
+            temp_fea[row_idx, col_idx] = sp.csr_matrix(np.ones([len(row_idx[0])])) - temp_fea[row_idx, col_idx]
+            temp_fea[col_idx, row_idx] = sp.csr_matrix(np.ones([len(row_idx[0])])) - temp_fea[col_idx, row_idx]
+            model.new_features_list[i].assign(temp_fea.todense()).eval(session = sess)
+
+        ##########################################
         #sess.run(opt.encoder_min_op, feed_dict=feed_dict)
         # run G optimizer  on trained model
         if restore_trained_our:
             sess.run(opt.G_min_op, feed_dict=feed_dict)
         else: # it is the new model
             if epoch < FLAGS.epochs:
-                sess.run(opt.G_min_op, feed_dict=feed_dict)
+                new_idx_list_new, _ = sess.run([model.new_idx_list,opt.G_min_op], feed_dict=feed_dict)
             #
-        ##
-        ##
         if epoch % 50 == 0:
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
             G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg,new_learning_rate],feed_dict=feed_dict)
-            #new_adj = get_new_adj(feed_dict, sess, model)
             new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
             temp_pred = new_adj.reshape(-1)
             #temp_ori = adj_norm_sparse.todense().A.reshape(-1)
@@ -326,6 +343,7 @@ def train():
     new_adj = new_adj - np.diag(np.diag(new_adj))
     new_adj_sparse = sp.csr_matrix(new_adj)
     testacc_new3, valid_acc_new = GCN.run(FLAGS.dataset, new_adj_sparse,new_features_csr, name="modified3")
+
     #np.save("./data/hinton/hinton_new_adj_48_0815.npy", new_adj)
     #roc_score, ap_score = get_roc_score(test_edges, test_edges_false,feed_dict, sess, model)
     ##### The final results ####
@@ -611,14 +629,3 @@ if __name__ == "__main__":
             # testaccnew3 = 1.01
             f_out.write(str(testacc_clean)+" "+str(testacc)+ ' '+str(testaccnew1)+ ' '+str(testaccnew2)+ ' '+str(testaccnew3)+"\n")
 
-    # print("The original base model")
-    #trained_dis_base(adj_norm, adj_label, if_ori = True)  #
-    # print("The modified model base model")
-    #trained_dis_base(adj_norm, new_adj, if_ori=False)
-    #print("The modified model base model using x_tilde")
-    #trained_dis_base(adj_norm, x_tilde_out, if_ori=False)
-    # print("finish")
-
-    # base_line()
-    # base_line2()
-    # base_line3()
