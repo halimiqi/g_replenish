@@ -10,9 +10,7 @@ from optimizer import Optimizergaegan
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
-
 class gaegan(object):
-
     def __init__(self,placeholders, num_features,num_nodes, features_nonzero,learning_rate_init ,if_drop_edge = True, **kwargs):
         # processing the name and the logging
         allowed_kwargs = {'name', 'logging'}
@@ -214,8 +212,9 @@ class gaegan(object):
         new_adj_for_del_softmax = new_adj_for_del_exp / tf.reduce_sum(new_adj_for_del_exp)
         new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
         self.new_adj_for_del_softmax = new_adj_for_del_softmax
-        new_indexes = tf.multinomial(tf.log([new_adj_for_del_softmax]), FLAGS.k)  # this is the sample section
+        new_indexes = tf.random.categorical(tf.log([new_adj_for_del_softmax]), FLAGS.k)  # this is the sample section
         # percentage = tf.reduce_prod(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))
+        #new_indexes_assign = tf.Variable(tf.zeros([1, FLAGS.k], ), name="index_list_for_edge")
         percentage = tf.reduce_sum(tf.log(
             tf.gather(new_adj_for_del_softmax, new_indexes[0])))  # using the reduce sum to replace the reduce product
         ######################## debug
@@ -224,8 +223,8 @@ class gaegan(object):
         self.mask = upper_bool_label  # the mask shows the entry which have edges
 
         ### here we should use assign op to change the value we want
-        new_adj_out = -5*tf.ones_like(new_adj, dtype = tf.float32)
-        ori_adj_out = -5 * tf.ones_like(new_adj, dtype=tf.float32)
+        new_adj_out = -5 * tf.ones_like(new_adj, dtype = tf.float32)
+        ori_adj_out = -5 * tf.ones_like(new_adj, dtype = tf.float32)
 
         # self.mask = tf.reshape(self.mask, [-1])
         # for i in range(k):
@@ -361,7 +360,7 @@ class gaegan(object):
             ## firstly we change the first nodes
             node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
                 tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(ori_adj, Z), Z, transpose_b=True))))
-            new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
+            new_indexes = tf.random.categorical(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
             percentage_node = tf.reduce_sum(tf.log(tf.gather(node_sample_dist, new_indexes[0])))
             Z_tilde = FullyConnect(output_size=self.input_dim, scope="flip_weight")(Z)
             Z_new = self.feature_dense + Z_tilde
@@ -370,7 +369,7 @@ class gaegan(object):
             D_A = rowsum - self.adj_ori_dense
             self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
             self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))
-            new_indexes_features = tf.multinomial(tf.log([self.feature_flip_dist]), FLAGS.k,
+            new_indexes_features = tf.random.categorical(tf.log([self.feature_flip_dist]), FLAGS.k,
                                                   )  # this is the sample section
             percentage_feature = tf.reduce_sum(tf.log(tf.gather(self.feature_flip_dist, new_indexes_features[0])))
             # mask = tf.matrix()
@@ -469,51 +468,6 @@ class gaegan(object):
             #reconstructions = tf.reshape(reconstructions, [self.n_samples, self.n_samples])
         return reconstructions
 
-    def discriminate_mock_detect(self, inputs,new_adj,  reuse = False):
-        # this methods uses this part to mock the community detection algorithm
-        with tf.variable_scope('discriminate') as scope:
-            if reuse == True:
-                scope.reuse_variables()
-
-            self.dis_hidden = GraphConvolutionSparse_denseadj(input_dim=self.input_dim,
-                                                  output_dim=FLAGS.hidden1,
-                                                  adj=new_adj,
-                                                  features_nonzero=self.features_nonzero,
-                                                  act=tf.nn.relu,
-                                                  dropout=self.dropout,
-                                                  logging=self.logging, name ="dis_conv1_sparse")((inputs, new_adj))
-
-
-            self.dis_z_mean = GraphConvolution_denseadj(input_dim=FLAGS.hidden1,
-                                           output_dim=FLAGS.hidden2,
-                                           adj=new_adj,
-                                           act=lambda x: x,
-                                           dropout=self.dropout,
-                                           logging=self.logging, name='dis_conv2')((self.dis_hidden, new_adj))
-            ############################
-            self.dis_z_mean_norm = tf.nn.softmax(self.dis_z_mean, axis = -1)
-            for targets in self.target_list:
-                targets_indices = [[x] for x in targets]
-                #self.G_target_pred = model.vaeD_tilde[targets, :]
-                self.Dis_target_pred = tf.gather_nd(self.dis_z_mean_norm, targets_indices)
-                self.Dis_target_pred_out = self.Dis_target_pred
-                ## calculate the KL divergence
-                for i in range(len(targets)):
-                    for j in range(i + 1, len(targets)):
-                        if ((i == 0) and (j == 1)):
-                            self.Dis_comm_loss_KL = tf.reduce_sum(
-                                (self.Dis_target_pred[i] * tf.log(self.Dis_target_pred[i] / self.Dis_target_pred[j])))
-                        else:
-                            self.Dis_comm_loss_KL += tf.reduce_sum((self.Dis_target_pred[i] * tf.log(self.Dis_target_pred[i] / self.Dis_target_pred[j])))
-            # to maximize the KL is to minimize the neg KL
-
-            ############################
-            self.dis_fully1 =tf.nn.relu(batch_normal(FullyConnect(output_size=256, scope='dis_fully1')(self.dis_z_mean),scope='dis_bn1', reuse = reuse))
-            self.dis_output = FullyConnect(output_size = FLAGS.n_clusters, scope='dis_fully2')(self.dis_fully1)
-            # the softmax layer for the model
-            self.dis_output_softmax = tf.nn.softmax(self.dis_output, axis=-1)
-            #self.dis_output = self.dis_z_mean
-        return self.dis_output_softmax, self.Dis_comm_loss_KL,self.Dis_target_pred_out
 
     def d_GCN(self, inputs,new_adj,  reuse = False):
         # this methods uses this part to mock the community detection algorithm

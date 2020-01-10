@@ -72,7 +72,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 50, "The k edges to delete")
+flags.DEFINE_integer("k", 20, "The k edges to delete")
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -268,18 +268,18 @@ def train():
             temp_adj[col_idx, row_idx] = 0
             # assign the ori_adj_out
             model.new_adj_outlist[i].assign(temp_adj.todense()).eval(session = sess)
+            del temp_adj
         ##########################################
         ## assign for features
         new_idx_node = sess.run(model.new_idx_nodelist, feed_dict = feed_dict)
         new_idx_fea = sess.run(model.new_idx_fealist, feed_dict = feed_dict)
         for i, new_idx in enumerate(new_idx_node):
-            temp_fea = features_csr.copy()
+            temp_fea = features_csr.todense()
             row_idx = new_idx_node[i]
             col_idx = new_idx_fea[i]
-            temp_fea[row_idx, col_idx] = sp.csr_matrix(np.ones([len(row_idx[0])])) - temp_fea[row_idx, col_idx]
-            temp_fea[col_idx, row_idx] = sp.csr_matrix(np.ones([len(row_idx[0])])) - temp_fea[col_idx, row_idx]
-            model.new_features_list[i].assign(temp_fea.todense()).eval(session = sess)
-
+            temp_fea[row_idx, col_idx] = 1 - temp_fea[row_idx, col_idx]
+            temp_fea[col_idx, row_idx] = 1 - temp_fea[col_idx, col_idx]
+            model.new_features_list[i].assign(temp_fea).eval(session = sess)
         ##########################################
         #sess.run(opt.encoder_min_op, feed_dict=feed_dict)
         # run G optimizer  on trained model
@@ -297,8 +297,8 @@ def train():
             temp_pred = new_adj.reshape(-1)
             #temp_ori = adj_norm_sparse.todense().A.reshape(-1)
             temp_ori = adj_label_sparse.todense().A.reshape(-1)
-            mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
-            print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
+            # mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
+            print("Step: %d,G: loss=%.7f ,Lap_para: %f , LR=%.7f" % (epoch, G_loss,laplacian_para,new_learn_rate_value))
             ## here is the debug part of the model#################################
             new_features, reg_trace, reg_log, reward_ratio = sess.run([model.new_fliped_features, opt.reg_trace, opt.reg_log, opt.new_percent_softmax], feed_dict=feed_dict)
             print("reg_trace is:")
