@@ -10,13 +10,17 @@ def main():
 
 def test():
     a = 0
-    a += tf.ones([5])
-    b = a + 1
+    a = np.arange(9)
+    a = a.reshape([3,3])
+    a = tf.constant(a)
+    b = tf.one_hot(4,9, dtype=tf.int32)
+    c = tf.reshape(b, [3,3])
+
+
     with tf.Session() as sess:
-        test1 = sess.run(b)
         test2 = sess.run(b)
-        print(test1)
+        test3 = sess.run(c)
         print(test2)
     return
-main()
+test()
 

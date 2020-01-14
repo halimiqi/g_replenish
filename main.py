@@ -40,8 +40,6 @@ flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('hidden3', 32, 'Number of units in graphite hidden layers.')
 flags.DEFINE_float('weight_decay', 0., 'Weight for L2 loss on embedding matrix.')
-flags.DEFINE_integer('delete_edge_times', 10, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
-
 ####### for clean gcn training and test
 flags.DEFINE_float('gcn_learning_rate', 0.01, 'Initial learning rate.')
 #flags.DEFINE_integer('epochs', 200, 'Number of epochs to train.')
@@ -72,7 +70,8 @@ flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 10, "The k edges to delete")
+flags.DEFINE_integer("k", 85, "The k edges to delete")
+flags.DEFINE_integer('delete_edge_times', 10, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -82,6 +81,7 @@ if_save_model = False
 if_train_dis = True
 restore_trained_our = False
 showed_target_idx = 0   # the target index group of targets you want to show
+run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
 ###################################
 ### read and process the graph
 model_str = FLAGS.model
@@ -251,17 +251,17 @@ def train():
         #sess.run(opt.encoder_min_op, feed_dict=feed_dict)
         # run G optimizer  on trained model
         if restore_trained_our:
-            sess.run(opt.G_min_op, feed_dict=feed_dict)
+            sess.run(opt.G_min_op, feed_dict=feed_dict, options = run_options)
         else: # it is the new model
             if epoch < FLAGS.epochs:
-                sess.run(opt.G_min_op, feed_dict=feed_dict)
+                sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
             #
         ##
         ##
         if epoch % 50 == 0:
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-            G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg,new_learning_rate],feed_dict=feed_dict)
+            G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg,new_learning_rate],feed_dict=feed_dict,  options = run_options)
             #new_adj = get_new_adj(feed_dict, sess, model)
             new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
             temp_pred = new_adj.reshape(-1)
