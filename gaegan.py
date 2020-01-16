@@ -12,7 +12,6 @@ FLAGS = flags.FLAGS
 
 
 class gaegan(object):
-
     def __init__(self,placeholders, num_features,num_nodes, features_nonzero,learning_rate_init ,if_drop_edge = True, **kwargs):
         # processing the name and the logging
         allowed_kwargs = {'name', 'logging'}
@@ -119,27 +118,30 @@ class gaegan(object):
             #self.feature_flip_dist = tf.linalg.diag_part(self.feature_reg)  # the distribution for one node feature
             #############
             reward_per = 0
-            self.new_adj_output = self.adj_ori_dense
+            #self.new_adj_output = self.adj_ori_dense
             ###############
             #######
             # self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new(new_adj_for_del_softmax,
             #                                                                                upper_bool_label,
             #                                                                                new_adj_flat, ori_adj_flat,
             #                                                                                ori_adj_diag, k = FLAGS.k)
-            #self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new_onehot_once(new_adj_for_del_softmax,
-            #                                                                               upper_bool_label,
-            #                                                                               new_adj_flat, ori_adj_flat,
-            #                                                                               ori_adj_diag, k=FLAGS.k)
+            self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new_onehot_once(new_adj_for_del_softmax,
+                                                                                          upper_bool_label,
+                                                                                          new_adj_flat, ori_adj_flat,
+                                                                                          ori_adj_diag, k=FLAGS.k)
             self.new_adj_outlist.append(self.new_adj_output)
-            #self.reward_percent_list.append(reward_per)
+            self.reward_percent_list.append(reward_per)
             #self.new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
             #self.new_fliped_features, percentage_features = self.flip_features(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
-            self.new_fliped_features, percentage_features, self.node_per,self.fea_per = self.flip_features_onehot_once(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
-            self.new_features_list.append(self.new_fliped_features)
-            self.percentage_list_all.append(reward_per + percentage_features)
-            self.percentage_fea.append(percentage_features)
+            # self.new_fliped_features, percentage_features, self.node_per,self.fea_per = self.flip_features_onehot_once(node_sample_dist,
+            #                                                                                                            self.feature_flip_dist,
+            #                                                                                                            self.inputs,
+            #                                                                                                            k = FLAGS.k,
+            #                                                                                                            reuse = False)
+            #self.new_features_list.append(self.new_fliped_features)
+            # self.percentage_list_all.append(reward_per + percentage_features)
+            #self.percentage_fea.append(percentage_features)
             ############### do the sample several times
-
             for time in range(max(FLAGS.delete_edge_times-1, 0)):
                 # temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
                 #                                                                    k=FLAGS.k)
@@ -158,7 +160,7 @@ class gaegan(object):
                 # new_fliped_features, percentage_features = self.flip_features(node_sample_dist,
                 #                                                                    self.feature_flip_dist, self.inputs,
                 #                                                                    k=FLAGS.k, reuse=True)
-                new_fliped_features, percentage_features = self.flip_features_onehot_once(node_sample_dist,
+                new_fliped_features, percentage_features,node_per, fea_per = self.flip_features_onehot_once(node_sample_dist,
                                                                               self.feature_flip_dist, self.inputs,
                                                                               k=FLAGS.k, reuse=True)
                 self.new_features_list.append(new_fliped_features)
@@ -168,7 +170,6 @@ class gaegan(object):
             #self.x_tilde_deleted = self.x_tilde_out
             self.new_adj_without_norm = self.new_adj_output
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
-
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
         # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
         # _,self.mod_pred,_ = self.d_GCN(self.inputs, self.adj_dense, reuse = True)

@@ -638,7 +638,7 @@ def randomly_delete_edges(adj, k):
     adj_orig_dense = adj.todense()
     flag_adj = np.triu(adj_orig_dense, k=1)
     idx_list = np.argwhere(flag_adj == 1)
-    selected_idx_of_idx_list = np.random.choice(len(idx_list), size=k, replace = True)
+    selected_idx_of_idx_list = np.random.choice(len(idx_list), size=k, replace = False)
     selected_idx = idx_list[selected_idx_of_idx_list]
     adj_out[selected_idx[:, 0], selected_idx[:, 1]] = 0
     adj_out[selected_idx[:, 1], selected_idx[:, 0]] = 0

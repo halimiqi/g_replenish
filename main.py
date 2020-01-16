@@ -66,12 +66,12 @@ from tensorflow.python.client import device_lib
 flags.DEFINE_integer("batch_size" , 64, "batch size")
 flags.DEFINE_integer("max_iters" , 600000, "the maxmization epoch")
 flags.DEFINE_integer("latent_dim" , 16, "the dim of latent code")
-flags.DEFINE_float("learn_rate_init" , 1e-04, "the init of learn rate")
+flags.DEFINE_float("learn_rate_init" , 1e-03, "the init of learn rate")
 #Please set this num of repeat by the size of your datasets.
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 15000, "The k edges to delete")
+flags.DEFINE_integer("k", 1000, "The k edges to delete")
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
@@ -147,9 +147,8 @@ def train():
     adj_orig = adj
     adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]),
                                         shape=adj_orig.shape)  # delete self loop
-    # adj_orig.eliminate_zeros()
-    # adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)
-    adj_new = adj_orig
+    adj_orig.eliminate_zeros()
+    adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)
     features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5)
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
     # feature_new = features
@@ -161,9 +160,9 @@ def train():
     # surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
     # ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
     ####################### the clean and noised GCN  ############################
-    testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, features_csr, name = "clean")
-    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_new_csr,  name = "original")
-    testacc_upper, valid_acc_upper = GCN.run(FLAGS.dataset, adj_new, features_csr, name="upper_bound")
+    testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "clean")
+    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_new_csr, y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "original")
+    testacc_upper, valid_acc_upper = GCN.run(FLAGS.dataset, adj_new, features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name="upper_bound")
     ###########
     print(testacc_clean)
     print(testacc)
@@ -286,20 +285,14 @@ def train():
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
             print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
             ## here is the debug part of the model#################################
-            new_features, reg_trace, reg_log, reward_ratio,node_per, fea_per = sess.run([model.new_fliped_features, opt.reg_trace, opt.reg_log, opt.percentage_fea,model.node_per,model.fea_per], feed_dict=feed_dict)
+            reg_trace, reg_log, reward_ratio = sess.run([opt.reg_trace, opt.reg_log, opt.percentage_edge], feed_dict=feed_dict)
             print("reg_trace is:")
             print(reg_trace)
             print("reg_log is:")
             print(reg_log)
             print("reward_percentage")
             print(reward_ratio)
-            print("New features")
-            print(new_features[5,:20])
-            print("node_percent")
-            print(node_per)
-            print("fea_per")
-            print(fea_per)
-            new_features_csr = sp.csr_matrix(new_features)
+            #new_features_csr = sp.csr_matrix(new_features)
             ##########################################
             #';# check the D_loss_min
             if (G_loss < G_loss_min) and (epoch > 1000) and (if_save_model):
@@ -324,15 +317,11 @@ def train():
     # modified_model = GCN.GCN(sizes, new_adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
     # modified_model.train(new_adj_norm_sparse_csr, split_train, split_val, node_labels)
     # modified_acc = modified_model.test(split_unlabeled, node_labels, new_adj_norm_sparse_csr)
-    testacc_new, valid_acc_new = GCN.run(FLAGS.dataset,new_adj_sparse,features_csr, name = "modified")
+    testacc_new, valid_acc_new = GCN.run(FLAGS.dataset,new_adj_sparse,features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "modified")
     new_adj = get_new_adj(feed_dict, sess, model)
     new_adj = new_adj - np.diag(np.diag(new_adj))
     new_adj_sparse = sp.csr_matrix(new_adj)
-    testacc_new2, valid_acc_new = GCN.run(FLAGS.dataset,adj_new,new_features_csr , name="modified2")
-    new_adj = get_new_adj(feed_dict, sess, model)
-    new_adj = new_adj - np.diag(np.diag(new_adj))
-    new_adj_sparse = sp.csr_matrix(new_adj)
-    testacc_new3, valid_acc_new = GCN.run(FLAGS.dataset, new_adj_sparse,new_features_csr, name="modified3")
+    #testacc_new2, valid_acc_new = GCN.run(FLAGS.dataset,adj_new,new_features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask,  name="modified2")
     #np.save("./data/hinton/hinton_new_adj_48_0815.npy", new_adj)
     #roc_score, ap_score = get_roc_score(test_edges, test_edges_false,feed_dict, sess, model)
     ##### The final results ####
@@ -348,12 +337,12 @@ def train():
     print("The only modify adj acc is : ")
     print(testacc_new)
     print("*#" * 15)
-    print("The only modify feature acc is : ")
-    print(testacc_new2)
-    print("*#" * 15)
-    print("The modify both adj and feature and acc is : ")
-    print(testacc_new3)
-    return new_adj,testacc_clean, testacc, testacc_new, testacc_new2, testacc_new3
+    # print("The only modify feature acc is : ")
+    # print(testacc_new2)
+    # print("*#" * 15)
+    # print("The modify both adj and feature and acc is : ")
+    # print(testacc_new3)
+    return new_adj,testacc_clean, testacc, testacc_new    #, testacc_new2, testacc_new3
 ## delete edges between the targets and 1add some
 def base_line():
     target_budget = np.random.choice(len(target_list), FLAGS.baseline_target_budget, replace = False)
@@ -611,13 +600,12 @@ if __name__ == "__main__":
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
         f_out.write("clean_acc" +" "+ "original_acc" + ' ' + 'modify_adj'+ ' ' + 'modify_feature' + ' ' + 'modify_both' + "\n")
         for i in range(2):
-            new_adj,testacc_clean, testacc, testaccnew1, testaccnew2, testaccnew3 = train()
+            new_adj,testacc_clean, testacc, testaccnew1 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01
             # testaccnew2 = 1.01
             # testaccnew3 = 1.01
-            f_out.write(str(testacc_clean)+" "+str(testacc)+ ' '+str(testaccnew1)+ ' '+str(testaccnew2)+ ' '+str(testaccnew3)+"\n")
-
+            f_out.write(str(testacc_clean)+" "+str(testacc)+ ' '+str(testaccnew1)+ ' '+"\n")
     # print("The original base model")
     #trained_dis_base(adj_norm, adj_label, if_ori = True)  #
     # print("The modified model base model")
