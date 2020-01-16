@@ -41,6 +41,14 @@ class gaegan(object):
         self.zp = tf.random_normal(shape=[self.n_samples, self.latent_dim])
         self.learning_rate_init = learning_rate_init
         self.if_drop_edge = if_drop_edge
+        #######################################
+        self.test_mask_adj = tf.one_hot(5, self.n_samples * self.n_samples,
+                                        on_value = True,
+                                        off_value = False,dtype = tf.bool)
+        self.test_mask_feature = tf.one_hot(10, self.n_samples * self.input_dim,
+                                            on_value = True,
+                                            off_value = False,dtype= tf.bool)
+        #######################################
         return
 
     def build_model(self):
@@ -71,6 +79,9 @@ class gaegan(object):
             #######
             ## prepare the graph for delete k edges
             ones = tf.ones_like(self.x_tilde, dtype=tf.float32)
+            self.zeros = tf.zeros_like(self.x_tilde, dtype = tf.bool)
+            self.feature_dense = tf.sparse_tensor_to_dense(self.inputs)
+            self.ones_feature = tf.ones_like(self.feature_dense)
             max_value = tf.reduce_max(self.x_tilde)
             lower_bool_label = tf.linalg.band_part(self.adj_ori_dense, -1, 0)
             upper_ori_label = self.adj_ori_dense - lower_bool_label  # there is no diagnal
@@ -92,9 +103,12 @@ class gaegan(object):
             new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
             ##
             ### prepare the matrix for delete k features
-            self.feature_dense = tf.sparse_tensor_to_dense(self.inputs)
+
             node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
                 tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x, transpose_b=True))))
+            #node_sample_dist = tf.nn.sigmoid(
+            #    tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x, transpose_b=True)))
+
             Z_tilde = FullyConnect(output_size=self.input_dim, scope="generate_flip_weight")(self.z_x)
             Z_new = self.feature_dense + Z_tilde
             rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
@@ -102,16 +116,25 @@ class gaegan(object):
             D_A = rowsum - self.adj_ori_dense
             self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
             self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))  # the distribution for one node feature
-            ##
+            #self.feature_flip_dist = tf.linalg.diag_part(self.feature_reg)  # the distribution for one node feature
+            #############
+            reward_per = 0
+            self.new_adj_output = self.adj_ori_dense
+            ###############
             #######
-            self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new(new_adj_for_del_softmax,
-                                                                                           upper_bool_label,
-                                                                                           new_adj_flat, ori_adj_flat,
-                                                                                           ori_adj_diag, k = FLAGS.k)
+            # self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new(new_adj_for_del_softmax,
+            #                                                                                upper_bool_label,
+            #                                                                                new_adj_flat, ori_adj_flat,
+            #                                                                                ori_adj_diag, k = FLAGS.k)
+            #self.x_tilde_out, self.new_adj_output, reward_per = self.delete_k_edge_min_new_onehot_once(new_adj_for_del_softmax,
+            #                                                                               upper_bool_label,
+            #                                                                               new_adj_flat, ori_adj_flat,
+            #                                                                               ori_adj_diag, k=FLAGS.k)
             self.new_adj_outlist.append(self.new_adj_output)
-            self.reward_percent_list.append(reward_per)
+            #self.reward_percent_list.append(reward_per)
             #self.new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
-            self.new_fliped_features, percentage_features = self.flip_features(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
+            #self.new_fliped_features, percentage_features = self.flip_features(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
+            self.new_fliped_features, percentage_features, self.node_per,self.fea_per = self.flip_features_onehot_once(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
             self.new_features_list.append(self.new_fliped_features)
             self.percentage_list_all.append(reward_per + percentage_features)
             self.percentage_fea.append(percentage_features)
@@ -120,29 +143,96 @@ class gaegan(object):
             for time in range(max(FLAGS.delete_edge_times-1, 0)):
                 # temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(self.x_tilde, self.adj_ori_dense,
                 #                                                                    k=FLAGS.k)
-                temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(new_adj_for_del_softmax,
-                                                                                               upper_bool_label,
-                                                                                               new_adj_flat,
-                                                                                               ori_adj_flat,
-                                                                                               ori_adj_diag, k=FLAGS.k)
+                # temp_x_tilde_out, new_adj_out ,reward_per = self.delete_k_edge_min_new(new_adj_for_del_softmax,
+                #                                                                                upper_bool_label,
+                #                                                                                new_adj_flat,
+                #                                                                                ori_adj_flat,
+                #                                                                                ori_adj_diag, k=FLAGS.k)
+                temp_x_tilde_out, new_adj_out, reward_per = self.delete_k_edge_min_new_onehot_once(new_adj_for_del_softmax,
+                                                                                       upper_bool_label,
+                                                                                       new_adj_flat,
+                                                                                       ori_adj_flat,
+                                                                                       ori_adj_diag, k=FLAGS.k)
                 self.new_adj_outlist.append(new_adj_out)
                 self.reward_percent_list.append(reward_per)
-                new_fliped_features, percentage_features = self.flip_features(node_sample_dist,
-                                                                                   self.feature_flip_dist, self.inputs,
-                                                                                   k=FLAGS.k, reuse=True)
+                # new_fliped_features, percentage_features = self.flip_features(node_sample_dist,
+                #                                                                    self.feature_flip_dist, self.inputs,
+                #                                                                    k=FLAGS.k, reuse=True)
+                new_fliped_features, percentage_features = self.flip_features_onehot_once(node_sample_dist,
+                                                                              self.feature_flip_dist, self.inputs,
+                                                                              k=FLAGS.k, reuse=True)
                 self.new_features_list.append(new_fliped_features)
                 self.percentage_list_all.append(percentage_features+ reward_per)
                 self.percentage_fea.append(percentage_features)
             #self.x_tilde, self.new_adj_output = self.delete_k_edge_max(self.x_tilde, self.adj_ori_dense, k = FLAGS.k)
             #self.x_tilde_deleted = self.x_tilde_out
-            self.x_tilde_deleted = self.x_tilde_out
             self.new_adj_without_norm = self.new_adj_output
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
-            
+
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
         # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
         # _,self.mod_pred,_ = self.d_GCN(self.inputs, self.adj_dense, reuse = True)
         return
+
+    def delete_k_edge_min_new_onehot_once(self, new_adj_for_del_softmax, upper_bool_label, new_adj_flat, ori_adj_flat, ori_adj_diag,
+                              k=3):  ## this is the newest delete part
+        """
+        delete the k edges in the new matrix
+        :param new_adj:   the x_tilde after the generator
+        :param ori_adj:   the original dense adj
+        :param k:   how many edges to delete
+        :return:  new_adj_out:the deleted edges for x_tilde; ori_adj_out: the deleted edges for original adj
+        """
+        ### here we should use the the edges which only contains edges. so it si tf.gather
+        del_gather_idx = tf.where(new_adj_for_del_softmax > 0)
+        new_adj_del_softmax_gather = tf.gather(new_adj_for_del_softmax, del_gather_idx[:,0])
+        new_indexes_gather = tf.multinomial(tf.log([new_adj_del_softmax_gather]), FLAGS.k)  # this is the sample section
+        new_indexes = tf.gather(del_gather_idx[:,0], new_indexes_gather[0])
+        # percentage = tf.reduce_prod(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))
+        percentage = tf.reduce_sum(tf.log(
+            tf.gather(new_adj_del_softmax_gather, new_indexes_gather[0])))  # using the reduce sum to replace the reduce product
+        ######################## debug
+        self.new_indexes = new_indexes
+        ########################
+        self.mask = upper_bool_label
+        # self.mask = tf.reshape(self.mask, [-1])
+        ## form the sparse matrix
+        row_idx = new_indexes// self.n_samples
+        col_idx = new_indexes % self.n_samples
+
+        indices = tf.stack([row_idx, col_idx], axis = -1)
+        values = np.ones([int(indices.shape[0])])
+        shape = [self.n_samples, self.n_samples]
+        delete_mask_sparse = tf.SparseTensor(indices, values, shape)
+        delete_mask_sparse = tf.cast(delete_mask_sparse, tf.bool)
+        ##
+        # for i in range(k):
+        #     self.delete_onehot_mask = self.test_mask_adj
+        #     #self.delete_onehot_mask = tf.one_hot(new_indexes[0][i], self.n_samples * self.n_samples,on_value = True, off_value=False, dtype = tf.bool)
+        #     self.delete_onehot_mask = tf.reshape(self.delete_onehot_mask, [self.n_samples, self.n_samples])
+        #     self.mask = tf.where(self.delete_onehot_mask, x=self.zeros, y=self.mask,
+        #                          name="softmax_mask")
+            # self.mask = self.mask - self.delete_onehot_mask
+
+        self.mask = tf.where(tf.sparse.to_dense(delete_mask_sparse, default_value = False, validate_indices=False),
+                             x = self.zeros, y = self.mask, name = "softmax_mask")
+        self.mask = tf.reshape(self.mask, [-1])
+
+        # self.update_mask= tf.assign(self.mask[new_pos], 0)
+        # new_adj_out = tf.multiply(new_adj_flat, self.mask)   # the upper triangular
+        # ori_adj_out = tf.multiply(ori_adj_flat, self.mask)
+        new_adj_out = tf.where(self.mask, x=new_adj_flat, y=tf.zeros_like(new_adj_flat), name="mask_new_adj")
+        ori_adj_out = tf.where(self.mask, x=ori_adj_flat, y=tf.zeros_like(ori_adj_flat), name="mask_ori_adj")
+        # add the transpose and the lower part of the model
+        # new_adj_out = new_adj_out + new_adj_diag
+        ori_adj_out = ori_adj_out + ori_adj_diag
+        ## having the softmax
+        ori_adj_out = tf.reshape(ori_adj_out, [self.n_samples, self.n_samples])
+        # make the matrix system
+        # new_adj_out = new_adj_out + (tf.transpose(new_adj_out) - tf.matrix_diag(tf.matrix_diag_part(new_adj_out)))
+        ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
+        self.ori_adj_out = ori_adj_out
+        return new_adj_out, ori_adj_out, percentage
 
     def delete_k_edge_min_new(self, new_adj_for_del_softmax, upper_bool_label,new_adj_flat, ori_adj_flat ,ori_adj_diag, k=3):  ## this is the newest delete part
         """
@@ -188,6 +278,7 @@ class gaegan(object):
         ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
         self.ori_adj_out = ori_adj_out
         return new_adj_out, ori_adj_out, percentage
+
 
     def delete_k_edge_max_new(self, new_adj, ori_adj, k=3):
         zeros = tf.zeros_like(new_adj)
@@ -332,6 +423,43 @@ class gaegan(object):
         ## now calculate the overall percentage
             percentage_all = percentage_node + percentage_feature
         return new_features, percentage_all
+
+    def flip_features_onehot_once(self, node_sample_dist, feature_flip_dist,features, k = 10, reuse = tf.AUTO_REUSE):
+        with tf.variable_scope("generate_flip_fea") as scope:
+            if reuse == True:
+                scope.reuse_variables()
+            percentage_all = 0
+            new_indexes = tf.multinomial(tf.log([node_sample_dist]), FLAGS.k)  # this is the sample section
+            percentage_node = tf.reduce_sum(tf.log(tf.gather(node_sample_dist, new_indexes[0])))
+            #percentage_node = tf.reduce_sum(tf.log(tf.gather(tf.nn.softmax(node_sample_dist), new_indexes[0])))
+            new_indexes_features = tf.multinomial(tf.log([feature_flip_dist]), FLAGS.k)  # this is the sample section
+            percentage_feature = tf.reduce_sum(tf.log(tf.gather(feature_flip_dist, new_indexes_features[0])))
+            #percentage_feature = tf.reduce_sum(tf.log(tf.gather(tf.nn.softmax(feature_flip_dist), new_indexes_features[0])))
+            #mask = tf.matrix()
+            new_features = features
+            ## form the sparse tensor mask
+            row_idx = new_indexes[0]
+            col_idx = new_indexes_features[0]
+            indices = tf.stack([row_idx, col_idx], axis=-1)
+            values = np.ones([int(indices.shape[0])])
+            shape = [self.n_samples, self.input_dim]
+            delete_mask_sparse = tf.SparseTensor(indices, values, shape)
+            delete_mask_sparse = tf.cast(delete_mask_sparse, tf.bool)
+            ## then we change the features
+            # for i in range(k):
+            #     delete_onehot_mask = self.test_mask_feature
+            #     #delete_onehot_mask = tf.one_hot(new_indexes[0][i] * self.input_dim + new_indexes_features[0][i],self.n_samples * self.input_dim , on_value = True, off_value = False ,dtype = tf.bool)
+            #     delete_onehot_mask = tf.reshape(delete_onehot_mask, [self.n_samples, self.input_dim])
+            #     #delete_onehot_mask = tf.one_hot(delete_mask_idx, depth=self.input_dim, dtype=tf.int32)
+            #     # delete_onehot_mask = tf.cast(delete_onehot_mask, tf.bool)
+            #     new_features = tf.where(delete_onehot_mask, x=self.ones_feature - self.feature_dense, y=self.feature_dense,
+            #                      name="softmax_mask")
+            new_features = tf.where(tf.sparse.to_dense(delete_mask_sparse,default_value=False, validate_indices=False),
+                                    x = self.ones_feature - self.feature_dense,
+                                    y = self.feature_dense, name="softmax_mask")
+        ## now calculate the overall percentage
+            percentage_all = percentage_node + percentage_feature
+        return new_features, percentage_all, percentage_node, percentage_feature
 
     def encoder(self, inputs):
         with tf.variable_scope('encoder') as scope:

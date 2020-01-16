@@ -127,7 +127,9 @@ class Optimizergaegan(object):
             #self.G_comm_loss = self.reg_loss_many_samples_reward_per(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse(model, self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_many_samples_reward_ratio_no_reverse_softmax(model, self.G_comm_loss)
-            self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
+            #self.G_comm_loss = self.reg_loss_many_samples_no_reverse_softmax_features(model, self.G_comm_loss)
+            self.G_comm_loss = self.reg_loss_no_smaple_reverse_features_only(model,
+                                                                        self.G_comm_loss)
 
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
@@ -369,6 +371,7 @@ class Optimizergaegan(object):
         :param G_comm_loss:
         :return:
         """
+        G_comm_loss_mean = 0
         self.reward_list = []
         self.percentage_all = 0
         for idx, adj_deleted in enumerate(model.new_adj_outlist):
@@ -420,5 +423,68 @@ class Optimizergaegan(object):
                 G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
         # G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
+
+    def reg_loss_no_smaple_reverse_features_only(self, model, G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        self.reward_list = []
+        self.percentage_all = 0
+        for idx, adj_deleted in enumerate(model.new_adj_outlist):
+            self.reg = 0
+            adj_deleted_mat = model.adj_ori_dense
+            ### the Laplacian loss here we should use the real new one
+            #adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
+            rowsum = tf.matrix_diag(rowsum)
+            self.g_delta = rowsum - adj_deleted_mat
+            temp = tf.matmul(tf.transpose(model.new_features_list[idx]), self.g_delta)
+            self.reg_mat = tf.matmul(temp, model.new_features_list[idx])
+            ###### grab non zero part
+            # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            ###### norm version
+            # self.reg = tf.square(tf.norm(self.reg_mat))
+            ###### trace version
+            self.reg = tf.trace(self.reg_mat)
+            self.reg_trace = self.reg
+            #self.reg = tf.log(self.reg + 1)
+            self.reg = tf.log(self.reg)
+            # self.reg_log = self.reg
+            self.reg_log = self.reg
+            # self.reg = tf.reduce_mean(self.reg_mat)
+            self.reg = 1 / (self.reg + 1e-10)
+
+            ## self.G_comm_loss
+            # eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            # eij = tf.reduce_sum(tf.log(eij))
+            # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            if idx == 0:
+                #G_comm_loss_mean = self.reg
+                self.reward_list.append(self.reg)
+                self.percentage_all = model.percentage_list_all[idx]
+                self.percentage_fea = model.percentage_fea[idx]
+            #else:
+            #    G_comm_loss_mean += self.reg
+            #    self.reward_list.append(self.reg)
+            #    self.percentage_all += model.percentage_list_all[idx]
+        #G_comm_loss_mean = G_comm_loss_mean / len(model.new_adj_outlist)
+        #### if we need the softmax function for this part
+        # new_percent_softmax = tf.nn.softmax(model.percentage_list_all)
+        # self.new_percent_softmax = new_percent_softmax
+        ########
+        for idx, item in enumerate(self.reward_list):
+            if idx == 0:
+                # G_comm_loss = (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+                G_comm_loss = (self.percentage_fea) * (item)
+            #else:
+            #    # G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+            #    G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
+        G_comm_loss = (-1) * G_comm_loss
+        return G_comm_loss
+
     pass
 

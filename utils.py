@@ -22,7 +22,7 @@ def load_npz_edges(file_name):
         for i in range(num_nodes):
             if len(indices[indptr[i]:indptr[i+1]]) > 0:
                 dict_of_lists[i] = indices[indptr[i]:indptr[i+1]].tolist()
-    
+
     return dict_of_lists
 
 
@@ -349,7 +349,7 @@ def cal_scores_oneedge_AD_uXu(A, X, X_mean,eig_vals, eig_vec, filtered_edges, r=
     return_values = []
     # X_mean = np.sum(X, axis = 1)
     #X_mean = np.ones(A.shape[0])
-    
+
     for j in range(len(filtered_edges)):
         filtered_edge = filtered_edges[j]
         eig_vals_res = np.zeros(len(eig_vals))
@@ -374,12 +374,12 @@ def cal_scores_oneedge_AD_uXu(A, X, X_mean,eig_vals, eig_vec, filtered_edges, r=
         #eig_vals_k = eig_vals_res[eig_vals_argk]
         # Original_0
         # u_k = eig_vec[:,eig_vals_idx[:tmp_k]]
-        # u_x_mean = u_k.T.dot(X_mean) 
+        # u_x_mean = u_k.T.dot(X_mean)
         # return_values.append(np.sum(np.abs(u_x_mean)))
         # Original_1
         eig_vals_k_sum = eig_vals_res[eig_vals_idx[:tmp_k]].sum()
         u_k = eig_vec[:,eig_vals_idx[:tmp_k]]
-        u_x_mean = u_k.T.dot(X_mean) 
+        u_x_mean = u_k.T.dot(X_mean)
         return_values.append(eig_vals_k_sum * np.sum(np.abs(u_x_mean)))
 
         print("The one_edge_version progress:%f%%" % (((j + 1) / (len(filtered_edges))) * 100), end='\r', flush=True)
@@ -638,10 +638,31 @@ def randomly_delete_edges(adj, k):
     adj_orig_dense = adj.todense()
     flag_adj = np.triu(adj_orig_dense, k=1)
     idx_list = np.argwhere(flag_adj == 1)
-    selected_idx_of_idx_list = np.random.choice(len(idx_list), size=k)
+    selected_idx_of_idx_list = np.random.choice(len(idx_list), size=k, replace = True)
     selected_idx = idx_list[selected_idx_of_idx_list]
     adj_out[selected_idx[:, 0], selected_idx[:, 1]] = 0
     adj_out[selected_idx[:, 1], selected_idx[:, 0]] = 0
 
     return adj_out
 
+def randomly_flip_features(features, k,seed):
+    np.random.seed(seed)
+    num_node = features.shape[0]
+    num_features = features.shape[1]
+    features_lil = features.tolil()
+    flip_node_idx_select = np.random.choice(num_node, size = 3000, replace = False)   ## select 100 node
+    flip_node_idx = np.random.choice(flip_node_idx_select, size=k,replace = True)
+    flip_fea_idx_select = np.random.choice(num_features, size = 10, replace = False)   ## select 2 features
+    flip_fea_idx = np.random.choice(flip_fea_idx_select, size=k)
+    ### this is the matrix one
+    for i in range(len(flip_node_idx)):
+        if features[flip_node_idx[i], flip_fea_idx[i]] == 1:
+            features_lil[flip_node_idx[i], flip_fea_idx[i]] = 0
+        else:
+           features_lil[flip_node_idx[i], flip_fea_idx[i]] = 1
+    return features_lil.tocsr()
+
+if __name__ == "__main__":
+    dense = np.diag(np.random.randint(1,100, size = 1000))
+    features = sp.csr_matrix(dense)
+    randomly_flip_features(features, 1000, 142)

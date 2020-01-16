@@ -1,7 +1,8 @@
 import tensorflow as tf
 import random
+import tensorflow.contrib.slim as slim
 #from utils import mkdir_p
-from utils import randomly_add_edges, randomly_delete_edges
+from utils import randomly_add_edges, randomly_delete_edges, randomly_flip_features
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
@@ -46,7 +47,7 @@ flags.DEFINE_float('gcn_learning_rate', 0.01, 'Initial learning rate.')
 flags.DEFINE_integer('gcn_hidden1', 16, 'Number of units in hidden layer 1.')
 #flags.DEFINE_float('dropout', 0.5, 'Dropout rate (1 - keep probability).')
 flags.DEFINE_float('gcn_weight_decay', 5e-4, 'Weight for L2 loss on embedding matrix.')
-#flags.DEFINE_integer('early_stopping', 10, 'Tolerance for early stopping (# of epochs).')
+flags.DEFINE_integer('early_stopping', 10, 'Tolerance for: early stopping (# of epochs).')
 flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
 ###########################
 flags.DEFINE_float('dropout', 0.3, 'Dropout rate (1 - keep probability).')
@@ -65,13 +66,13 @@ from tensorflow.python.client import device_lib
 flags.DEFINE_integer("batch_size" , 64, "batch size")
 flags.DEFINE_integer("max_iters" , 600000, "the maxmization epoch")
 flags.DEFINE_integer("latent_dim" , 16, "the dim of latent code")
-flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
+flags.DEFINE_float("learn_rate_init" , 1e-04, "the init of learn rate")
 #Please set this num of repeat by the size of your datasets.
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 85, "The k edges to delete")
-flags.DEFINE_integer('delete_edge_times', 10, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
+flags.DEFINE_integer("k", 15000, "The k edges to delete")
+flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
 ###############################
@@ -146,23 +147,34 @@ def train():
     adj_orig = adj
     adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]),
                                         shape=adj_orig.shape)  # delete self loop
-    adj_orig.eliminate_zeros()
-
-    adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)
-
+    # adj_orig.eliminate_zeros()
+    # adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)
+    adj_new = adj_orig
+    features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5)
+    feature_new = sparse_to_tuple(features_new_csr.tocoo())
+    # feature_new = features
+    # features_new_csr =features_csr
+    # features_nonzero = feature_new[1].shape[0]
     # train GCN first
     # sizes = [FLAGS.gcn_hidden1, FLAGS.gcn_hidden2, n_class]
     # surrogate_model = GCN.GCN(sizes, adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
     # surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
     # ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
+    ####################### the clean and noised GCN  ############################
     testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, features_csr, name = "clean")
-    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_csr,  name = "original")
+    testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_new_csr,  name = "original")
+    testacc_upper, valid_acc_upper = GCN.run(FLAGS.dataset, adj_new, features_csr, name="upper_bound")
+    ###########
+    print(testacc_clean)
+    print(testacc)
+    print(testacc_upper)
+    ###########
+    ##############################################################################
     adj_norm, adj_norm_sparse = preprocess_graph(adj_new)
     adj_norm_sparse_csr = adj_norm_sparse.tocsr()
     adj_label = adj_new + sp.eye(adj.shape[0])
     adj_label_sparse = adj_label
     adj_label = sparse_to_tuple(adj_label)
-
     if_drop_edge = True
     ## set the checkpoint path
     checkpoints_dir_base = "./checkpoints"
@@ -174,7 +186,6 @@ def train():
                                                    decay_rate=0.98)
     new_learn_rate_value = FLAGS.learn_rate_init
     ## set the placeholders
-
     placeholders = {
         'features': tf.sparse_placeholder(tf.float32, name= "ph_features"),
         'adj': tf.sparse_placeholder(tf.float32,name= "ph_adj"),
@@ -229,9 +240,10 @@ def train():
     #     checkpoints_dir_base = os.path.join("./checkpoints/base", FLAGS.trained_base_path)
     #     saver.restore(sess, tf.train.latest_checkpoint(checkpoints_dir_base))
 
-    feed_dict = construct_feed_dict(adj_norm, adj_label, features, placeholders)
+    feed_dict = construct_feed_dict(adj_norm, adj_label, feature_new, placeholders)
     feed_dict.update({placeholders['dropout']: FLAGS.dropout})
     # pred_dis_res = model.vaeD_tilde.eval(session=sess, feed_dict=feed_dict)
+
 
     #### save new_adj without norm#############
     if restore_trained_our:
@@ -242,7 +254,11 @@ def train():
         print("save the loaded adj")
     # print("before training generator")
     #####################################################
-
+    ##  get all variables in the model
+    def model_summary():
+        model_vars = tf.trainable_variables()
+        slim.model_analyzer.analyze_vars(model_vars,print_info=True)
+    model_summary()
     #####################################################
     G_loss_min = 1000
     for epoch in range(FLAGS.epochs):
@@ -270,7 +286,7 @@ def train():
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
             print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
             ## here is the debug part of the model#################################
-            new_features, reg_trace, reg_log, reward_ratio = sess.run([model.new_fliped_features, opt.reg_trace, opt.reg_log, opt.new_percent_softmax], feed_dict=feed_dict)
+            new_features, reg_trace, reg_log, reward_ratio,node_per, fea_per = sess.run([model.new_fliped_features, opt.reg_trace, opt.reg_log, opt.percentage_fea,model.node_per,model.fea_per], feed_dict=feed_dict)
             print("reg_trace is:")
             print(reg_trace)
             print("reg_log is:")
@@ -279,6 +295,10 @@ def train():
             print(reward_ratio)
             print("New features")
             print(new_features[5,:20])
+            print("node_percent")
+            print(node_per)
+            print("fea_per")
+            print(fea_per)
             new_features_csr = sp.csr_matrix(new_features)
             ##########################################
             #';# check the D_loss_min

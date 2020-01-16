@@ -36,7 +36,7 @@ FLAGS = flags.FLAGS
 # flags.DEFINE_integer('max_degree', 3, 'Maximum Chebyshev polynomial degree.')
 
 # Load data
-def run(dataset,adj,features, name = "original", model_str = "gcn", epochs = 200, dropout = 0.5, early_stopping = 30,seed = 142):
+def run(dataset,adj,features, name = "original", model_str = "gcn", epochs = 200, dropout = 0.5, early_stopping = 5,seed = 142):
     tf.reset_default_graph()
     graph = tf.Graph()
     with graph.as_default():
