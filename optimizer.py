@@ -52,7 +52,7 @@ class Optimizergaegan(object):
         self.G_comm_loss_KL = 0
         self.num_nodes = num_nodes
         self.if_drop_edge = if_drop_edge
-        self.last_reg = tf.get_variable("last_reg" ,0, dtype = tf.float32, trainable=False)
+        self.last_reg = tf.Variable(0,name = "last_reg", dtype = tf.float32, trainable=False)
         # this is for vae, it contains two parts of losses:
         # self.encoder_optimizer = tf.train.RMSPropOptimizer(learning_rate = new_learning_rate)
         self.generate_optimizer = tf.train.RMSPropOptimizer(learning_rate= new_learning_rate)

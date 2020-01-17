@@ -276,7 +276,7 @@ def train():
         # run G optimizer  on trained model
         last_reg = current_reg
         if restore_trained_our:
-            current_reg = sess.run([opt.G_min_op, opt.reg_log], feed_dict=feed_dict, options = run_options)
+            _, current_reg = sess.run([opt.G_min_op, opt.reg_log], feed_dict=feed_dict, options = run_options)
             sess.run(tf.assign(opt.last_reg, current_reg))
         else: # it is the new model
             if epoch < FLAGS.epochs:  ## here we can contorl the manner of new model
