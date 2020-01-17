@@ -52,6 +52,7 @@ class Optimizergaegan(object):
         self.G_comm_loss_KL = 0
         self.num_nodes = num_nodes
         self.if_drop_edge = if_drop_edge
+        self.last_reg = tf.get_variable("last_reg" ,0, dtype = tf.float32, trainable=False)
         # this is for vae, it contains two parts of losses:
         # self.encoder_optimizer = tf.train.RMSPropOptimizer(learning_rate = new_learning_rate)
         self.generate_optimizer = tf.train.RMSPropOptimizer(learning_rate= new_learning_rate)
@@ -458,17 +459,16 @@ class Optimizergaegan(object):
             self.reg = tf.log(self.reg)
             # self.reg_log = self.reg
             self.reg_log = self.reg
-            self.reg = self.reg * 0.1
-            self.reg = 1 / (self.reg + 1e-10)
-
+            #self.reg = self.reg * 0.1
+            #self.reg = 1 / (self.reg + 1e-10)
+            #### L1 - L2 to replace the laplacian
+            self.reg = self.last_reg - self.reg
+            #####
             ## self.G_comm_loss
             # eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
             # eij = tf.reduce_sum(tf.log(eij))
             # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
-            if idx == 0:
-                #G_comm_loss_mean = self.reg
-                self.reward_list.append(self.reg)
-                self.percentage_edge = model.reward_percent_list[0]
+            self.percentage_edge = model.reward_percent_list[0]
             #else:
             #    G_comm_loss_mean += self.reg
             #    self.reward_list.append(self.reg)
@@ -478,10 +478,8 @@ class Optimizergaegan(object):
         # new_percent_softmax = tf.nn.softmax(model.percentage_list_all)
         # self.new_percent_softmax = new_percent_softmax
         ########
-        for idx, item in enumerate(self.reward_list):
-            if idx == 0:
                 # G_comm_loss = (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
-                G_comm_loss = (self.percentage_edge) * (item)
+            G_comm_loss = (self.percentage_edge) * (self.reg)
             #else:
             #    # G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
             #    G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)

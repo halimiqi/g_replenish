@@ -151,13 +151,21 @@ def train():
     adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
     features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
-    ####################   check the laplacian ##########
+    ####################   check the laplacian lower bound ##########
     row_sum = adj_new.sum(1).A1
     row_sum = sp.diags(row_sum)
     L = row_sum - adj_new
     ori_Lap = features_new_csr.transpose().dot(L).dot(features_new_csr)
     ori_Lap_trace = ori_Lap.diagonal().sum()
     ori_Lap_log = np.log(ori_Lap_trace)
+
+    ###################   check the laplacian upper bound #############
+    row_sum = adj_orig.sum(1).A1
+    row_sum = sp.diags(row_sum)
+    L = row_sum - adj_orig
+    ori_Lap = features_new_csr.transpose().dot(L).dot(features_new_csr)
+    ori_Lap_trace = ori_Lap.diagonal().sum()
+    clean_Lap_log = np.log(ori_Lap_trace)
     ####################### the clean and noised GCN  ############################
     testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "clean")
     testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_new_csr, y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "original")
@@ -258,18 +266,23 @@ def train():
         slim.model_analyzer.analyze_vars(model_vars,print_info=True)
     model_summary()
     #####################################################
+    last_reg = 0
+    current_reg = 0
     G_loss_min = 1000
     for epoch in range(FLAGS.epochs):
         t = time.time()
         # run Encoder's optimizer
         #sess.run(opt.encoder_min_op, feed_dict=feed_dict)
         # run G optimizer  on trained model
+        last_reg = current_reg
         if restore_trained_our:
-            sess.run(opt.G_min_op, feed_dict=feed_dict, options = run_options)
+            current_reg = sess.run([opt.G_min_op, opt.reg_log], feed_dict=feed_dict, options = run_options)
+            sess.run(tf.assign(opt.last_reg, current_reg))
         else: # it is the new model
-            if epoch < FLAGS.epochs:
+            if epoch < FLAGS.epochs:  ## here we can contorl the manner of new model
                 sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
-            #
+                _, current_reg = sess.run([opt.G_min_op, opt.reg_log], feed_dict=feed_dict, options=run_options)
+                sess.run(tf.assign(opt.last_reg, current_reg))
         ##
         ##
         if epoch % 50 == 0:
@@ -284,17 +297,21 @@ def train():
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
             print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
             ## here is the debug part of the model#################################
-            reg_trace, reg_log, reward_ratio = sess.run([opt.reg_trace, opt.reg_log, opt.percentage_edge], feed_dict=feed_dict)
+            reg_trace, reward_ratio = sess.run([opt.reg_trace, opt.percentage_edge], feed_dict=feed_dict)
             print("reg_trace is:")
             print(reg_trace)
             print("reg_log is:")
-            print(reg_log)
+            print(current_reg)
+            print("last reg_log is:")
+            print(last_reg)
             print("reward_percentage")
             print(reward_ratio)
             print("original_reg_trace")
             print(ori_Lap_trace)
             print("original_reg_log")
             print(ori_Lap_log)
+            print("clean_reg_log")
+            print(clean_Lap_log)
             #new_features_csr = sp.csr_matrix(new_features)
             ##########################################
             #';# check the D_loss_min
