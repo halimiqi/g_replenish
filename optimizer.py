@@ -92,7 +92,8 @@ class Optimizergaegan(object):
             self.reg = 0
             ## the Laplacian loss
             x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=1)
+            rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - model.adj_ori_dense
             temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
             self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
@@ -134,7 +135,8 @@ class Optimizergaegan(object):
 
             ## the Laplacian loss
             x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=1)
+            rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - model.adj_ori_dense
             temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
             self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
@@ -190,7 +192,8 @@ class Optimizergaegan(object):
 
             ## the Laplacian loss
             x_tilde_deleted_mat = tf.reshape(x_tilde_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=0)
+            rowsum = tf.reduce_sum(model.adj_ori_dense, axis=1)
+            rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - model.adj_ori_dense
             temp = tf.matmul(tf.transpose(x_tilde_deleted_mat), self.g_delta)
             self.reg_mat = tf.matmul(temp, x_tilde_deleted_mat)
@@ -252,7 +255,7 @@ class Optimizergaegan(object):
 
             ## the Laplacian loss
             adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=1)
             rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - adj_deleted_mat
             feature_dense = tf.sparse_tensor_to_dense(model.inputs)
@@ -316,7 +319,7 @@ class Optimizergaegan(object):
             self.reg = 0
             ## the Laplacian loss here we should use the real new one
             adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=1)
             rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - adj_deleted_mat
             temp = tf.matmul(tf.transpose(model.new_features_list[idx]), self.g_delta)
@@ -377,7 +380,7 @@ class Optimizergaegan(object):
             adj_deleted_mat = model.adj_ori_dense
             ### the Laplacian loss here we should use the real new one
             #adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=1)
             rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - adj_deleted_mat
             temp = tf.matmul(tf.transpose(model.new_features_list[idx]), self.g_delta)
@@ -439,7 +442,7 @@ class Optimizergaegan(object):
             # adj_deleted_mat = model.adj_ori_dense
             ### the Laplacian loss here we should use the real new one
             adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
-            rowsum = tf.reduce_sum(adj_deleted_mat, axis=0)
+            rowsum = tf.reduce_sum(adj_deleted_mat, axis=1)
             rowsum = tf.matrix_diag(rowsum)
             self.g_delta = rowsum - adj_deleted_mat
             temp = tf.matmul(tf.transpose(model.feature_dense), self.g_delta)
@@ -455,7 +458,7 @@ class Optimizergaegan(object):
             self.reg = tf.log(self.reg)
             # self.reg_log = self.reg
             self.reg_log = self.reg
-            # self.reg = tf.reduce_mean(self.reg_mat)
+            self.reg = self.reg * 0.1
             self.reg = 1 / (self.reg + 1e-10)
 
             ## self.G_comm_loss

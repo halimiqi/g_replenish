@@ -148,17 +148,16 @@ def train():
     adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]),
                                         shape=adj_orig.shape)  # delete self loop
     adj_orig.eliminate_zeros()
-    adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)
-    features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5)
+    adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
+    features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
-    # feature_new = features
-    # features_new_csr =features_csr
-    # features_nonzero = feature_new[1].shape[0]
-    # train GCN first
-    # sizes = [FLAGS.gcn_hidden1, FLAGS.gcn_hidden2, n_class]
-    # surrogate_model = GCN.GCN(sizes, adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
-    # surrogate_model.train(adj_norm_sparse_csr, split_train, split_val, node_labels)
-    # ori_acc = surrogate_model.test(split_unlabeled, node_labels, adj_norm_sparse_csr)
+    ####################   check the laplacian ##########
+    row_sum = adj_new.sum(1).A1
+    row_sum = sp.diags(row_sum)
+    L = row_sum - adj_new
+    ori_Lap = features_new_csr.transpose().dot(L).dot(features_new_csr)
+    ori_Lap_trace = ori_Lap.diagonal().sum()
+    ori_Lap_log = np.log(ori_Lap_trace)
     ####################### the clean and noised GCN  ############################
     testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "clean")
     testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_new_csr, y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "original")
@@ -292,6 +291,10 @@ def train():
             print(reg_log)
             print("reward_percentage")
             print(reward_ratio)
+            print("original_reg_trace")
+            print(ori_Lap_trace)
+            print("original_reg_log")
+            print(ori_Lap_log)
             #new_features_csr = sp.csr_matrix(new_features)
             ##########################################
             #';# check the D_loss_min
