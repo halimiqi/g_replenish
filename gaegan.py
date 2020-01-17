@@ -189,9 +189,10 @@ class gaegan(object):
         new_adj_del_softmax_gather = tf.gather(new_adj_for_del_softmax, del_gather_idx[:,0])
         new_indexes_gather = tf.multinomial(tf.log([new_adj_del_softmax_gather]), FLAGS.k)  # this is the sample section
         new_indexes = tf.gather(del_gather_idx[:,0], new_indexes_gather[0])
-        # percentage = tf.reduce_prod(tf.log(tf.gather(new_adj_for_del_softmax, new_indexes[0])))
-        percentage = tf.reduce_sum(tf.log(
-            tf.gather(new_adj_del_softmax_gather, new_indexes_gather[0])))  # using the reduce sum to replace the reduce product
+        ######## this is the original percentage it is the flip percentage of the model
+        #percentage = tf.reduce_sum(tf.log(
+        #    tf.gather(new_adj_del_softmax_gather, new_indexes_gather[0])))  # using the reduce sum to replace the reduce product
+        ########################  implement the percentage using the left ratio using remain issue
         ######################## debug
         self.new_indexes = new_indexes
         ########################
@@ -233,6 +234,8 @@ class gaegan(object):
         # new_adj_out = new_adj_out + (tf.transpose(new_adj_out) - tf.matrix_diag(tf.matrix_diag_part(new_adj_out)))
         ori_adj_out = ori_adj_out + (tf.transpose(ori_adj_out) - tf.matrix_diag(tf.matrix_diag_part(ori_adj_out)))
         self.ori_adj_out = ori_adj_out
+        ######### calculate the percentage using this one
+        percentage = tf.reduce_sum(tf.log(tf.gather_nd(new_adj_out, tf.where(new_adj_out > 0))))
         return new_adj_out, ori_adj_out, percentage
 
     def delete_k_edge_min_new(self, new_adj_for_del_softmax, upper_bool_label,new_adj_flat, ori_adj_flat ,ori_adj_diag, k=3):  ## this is the newest delete part
