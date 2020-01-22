@@ -3,6 +3,7 @@ import random
 import tensorflow.contrib.slim as slim
 #from utils import mkdir_p
 from utils import randomly_add_edges, randomly_delete_edges, randomly_flip_features
+from utils import add_edges_between_labels
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
@@ -19,7 +20,7 @@ np.random.seed(seed)
 tf.set_random_seed(seed)
 #import sklearn.metrics.normalized_mutual_info_score as normalized_mutual_info_score
 from sklearn.metrics import normalized_mutual_info_score
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from tensorflow.python.client import device_lib
 print(device_lib.list_local_devices())
 from preprocessing import preprocess_graph, construct_feed_dict, sparse_to_tuple, mask_test_edges,get_target_nodes_and_comm_labels, construct_feed_dict_trained
@@ -34,7 +35,9 @@ from ops import print_mu, print_mu2
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 # flags.DEFINE_float('learning_rate', 0.005, 'Initial learning rate.')
-flags.DEFINE_integer('n_class', 6, 'Number of epochs to train.')
+#flags.DEFINE_integer('n_class', 6, 'Number of epochs to train.')
+##### this is for gae part
+flags.DEFINE_integer('n_clusters', 7, 'Number of epochs to train.')    # this one can be calculated according to labels
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
 flags.DEFINE_integer('epochs', 1200, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
@@ -59,7 +62,7 @@ flags.DEFINE_float('mincut_r', 0.01, 'The r parameters for the cutmin loss orth 
 flags.DEFINE_float('autoregressive_scalar', 0.2, 'the parametor for graphite generator')
 flags.DEFINE_string('model', 'gae_gan', 'Model string.')
 flags.DEFINE_string('generator', 'dense', 'Which generator will be used') # the options are "inner_product", "graphite", "graphite_attention", "dense_attention" , "dense"
-flags.DEFINE_string('dataset', 'citeseer', 'Dataset string.')
+flags.DEFINE_string('dataset', 'cora', 'Dataset string.')
 flags.DEFINE_integer('features', 1, 'Whether to use features (1) or not (0).')
 # seting from the vae gan
 from tensorflow.python.client import device_lib
@@ -75,6 +78,7 @@ flags.DEFINE_integer("k", 1000, "The k edges to delete")
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
+flags.DEFINE_float("reward_para", "2.0", "The hyper parameters for reward")
 ###############################
 if_drop_edge = True
 if_save_model = False
@@ -89,8 +93,7 @@ model_str = FLAGS.model
 dataset_str = FLAGS.dataset
 # Load data
 # _A_obs, _X_obs, _z_obs = utils.load_npz('data/citeseer.npz')
-adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data("citeseer")
-
+adj, features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data(FLAGS.dataset)
 # _A_obs = _A_obs + _A_obs.T #变GCN_ori as GCN
 # _A_obs[_A_obs > 1] = 1
 # adj = _A_obs
@@ -148,7 +151,8 @@ def train():
     adj_orig = adj_orig - sp.dia_matrix((adj_orig.diagonal()[np.newaxis, :], [0]),
                                         shape=adj_orig.shape)  # delete self loop
     adj_orig.eliminate_zeros()
-    adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
+    #adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
+    adj_new = add_edges_between_labels(adj_orig, FLAGS.k, y_train)
     features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
     ####################   check the laplacian lower bound ##########
@@ -163,9 +167,9 @@ def train():
     row_sum = adj_orig.sum(1).A1
     row_sum = sp.diags(row_sum)
     L = row_sum - adj_orig
-    ori_Lap = features_new_csr.transpose().dot(L).dot(features_new_csr)
-    ori_Lap_trace = ori_Lap.diagonal().sum()
-    clean_Lap_log = np.log(ori_Lap_trace)
+    clean_Lap = features_new_csr.transpose().dot(L).dot(features_new_csr)
+    clean_Lap_trace = clean_Lap.diagonal().sum()
+    clean_Lap_log = np.log(clean_Lap_trace)
     ####################### the clean and noised GCN  ############################
     testacc_clean, valid_acc_clean = GCN.run(FLAGS.dataset, adj_orig, features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "clean")
     testacc, valid_acc = GCN.run(FLAGS.dataset, adj_new,features_new_csr, y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "original")
@@ -221,7 +225,8 @@ def train():
                                   pos_weight=pos_weight,
                                   norm=norm,
                                   global_step=global_steps,
-                                  new_learning_rate = new_learning_rate
+                                  new_learning_rate = new_learning_rate,
+                                  ori_reg_log = ori_Lap_log
                                   )
     # init the sess
     sess = tf.Session()
@@ -276,12 +281,14 @@ def train():
         # run G optimizer  on trained model
         last_reg = current_reg
         if restore_trained_our:
-            _, current_reg = sess.run([opt.G_min_op, opt.reg_log], feed_dict=feed_dict, options = run_options)
+            _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
+                                                                opt.percentage_edge], feed_dict=feed_dict, options = run_options)
             sess.run(tf.assign(opt.last_reg, current_reg))
         else: # it is the new model
             if epoch < FLAGS.epochs:  ## here we can contorl the manner of new model
-                sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
-                _, current_reg = sess.run([opt.G_min_op, opt.reg_log], feed_dict=feed_dict, options=run_options)
+                # sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
+                _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
+                                                                    opt.percentage_edge], feed_dict=feed_dict, options=run_options)
                 sess.run(tf.assign(opt.last_reg, current_reg))
         ##
         ##
@@ -297,7 +304,7 @@ def train():
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
             print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
             ## here is the debug part of the model#################################
-            reg_trace, reward_ratio = sess.run([opt.reg_trace, opt.percentage_edge], feed_dict=feed_dict)
+            # reg_trace, reward_ratio = sess.run([opt.reg_trace, opt.percentage_edge], feed_dict=feed_dict)
             print("reg_trace is:")
             print(reg_trace)
             print("reg_log is:")
@@ -305,7 +312,7 @@ def train():
             print("last reg_log is:")
             print(last_reg)
             print("reward_percentage")
-            print(reward_ratio)
+            print(edge_percent)
             print("original_reg_trace")
             print(ori_Lap_trace)
             print("original_reg_log")
@@ -619,7 +626,7 @@ if __name__ == "__main__":
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
         f_out.write("clean_acc" +" "+ "original_acc" + ' ' + 'modify_adj'+ ' ' + 'modify_feature' + ' ' + 'modify_both' + "\n")
-        for i in range(2):
+        for i in range(1):
             new_adj,testacc_clean, testacc, testaccnew1 = train()
             # testacc = 1.01
             # testaccnew1 = 1.01

@@ -630,6 +630,25 @@ def randomly_add_edges(adj, k):
     adj_out[selected_idx[:, 1], selected_idx[:, 0]] = 1
     return adj_out
 
+def add_edges_between_labels(adj,k, y_train):
+    "add edges"
+    num_nodes = adj.shape[0]
+    adj_out = adj.copy()
+    adj_orig_dense = adj.todense()
+    flag_adj = np.triu(np.ones([num_nodes, num_nodes]), k = 1) - np.triu(adj_orig_dense,k=1)
+    idx_list = np.argwhere(flag_adj == 1)
+    different_labels_edges = []
+    for idxes in idx_list:
+        if ((not (y_train[idxes[0], :] == y_train[idxes[1],:]).all()) and
+            y_train[idxes[0],:].sum() !=0 and y_train[idxes[0],:].sum() !=0 ):
+            different_labels_edges.append(idxes)
+    different_labels_edges = np.array(different_labels_edges)
+    selected_idx_of = np.random.choice(len(different_labels_edges), size = k)
+    selected_edges = different_labels_edges[selected_idx_of]
+    adj_out[selected_edges[:,0], selected_edges[:,1]] = 1
+    adj_out[selected_edges[:,1], selected_edges[:,0]] = 1
+    return adj_out
+
 
 def randomly_delete_edges(adj, k):
     num_nodes = adj.shape[0]
@@ -650,7 +669,7 @@ def randomly_flip_features(features, k,seed):
     num_node = features.shape[0]
     num_features = features.shape[1]
     features_lil = features.tolil()
-    flip_node_idx_select = np.random.choice(num_node, size = 3000, replace = False)   ## select 100 node
+    flip_node_idx_select = np.random.choice(num_node, size = max(num_node, 400), replace = False)   ## select 100 node
     flip_node_idx = np.random.choice(flip_node_idx_select, size=k,replace = True)
     flip_fea_idx_select = np.random.choice(num_features, size = 10, replace = False)   ## select 2 features
     flip_fea_idx = np.random.choice(flip_fea_idx_select, size=k)
@@ -663,6 +682,9 @@ def randomly_flip_features(features, k,seed):
     return features_lil.tocsr()
 
 if __name__ == "__main__":
+    from gcn.utils import load_data
     dense = np.diag(np.random.randint(1,100, size = 1000))
     features = sp.csr_matrix(dense)
     randomly_flip_features(features, 1000, 142)
+    adj,features, y_train, y_val, y_test, train_mask, val_mask, test_mask = load_data("citeseer")
+    add_edges_between_labels(adj,10,y_train)

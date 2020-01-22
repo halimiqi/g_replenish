@@ -114,7 +114,7 @@ class GraphConvolution_denseadj(Layer):
         super(GraphConvolution_denseadj, self).__init__(**kwargs)
         with tf.variable_scope(self.name + '_vars'):
             self.vars['weights'] = weight_variable_glorot(input_dim, output_dim, name="weights")
-            self.vars['bias'] = tf.get_variable(name = "bias", shape = [output_dim], initializer=tf.zeros(output_dim))
+            self.vars['bias'] = tf.get_variable(name="bias", shape=[output_dim], initializer=tf.constant_initializer(0))
         self.dropout = dropout
         self.adj = adj
         self.act = act
@@ -136,7 +136,7 @@ class GraphConvolutionSparse_denseadj(Layer):
         super(GraphConvolutionSparse_denseadj, self).__init__(**kwargs)
         with tf.variable_scope(self.name + '_vars'):
             self.vars['weights'] = weight_variable_glorot(input_dim, output_dim, name="weights")
-            self.vars['bias'] = tf.get_variable(name="bias", shape=[output_dim], initializer=tf.zeros(output_dim))
+            self.vars['bias'] = tf.get_variable(name="bias", shape=[output_dim], initializer=tf.constant_initializer(0))
         self.dropout = dropout
         self.adj = adj
         self.act = act

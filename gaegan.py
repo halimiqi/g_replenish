@@ -76,7 +76,7 @@ class gaegan(object):
             self.x_tilde_output_ori = self.x_tilde
         if self.if_drop_edge != False:
             #######
-            ## prepare the graph for delete k edges
+            ######### prepare the graph for delete k edges
             ones = tf.ones_like(self.x_tilde, dtype=tf.float32)
             self.zeros = tf.zeros_like(self.x_tilde, dtype = tf.bool)
             self.feature_dense = tf.sparse_tensor_to_dense(self.inputs)
@@ -91,7 +91,6 @@ class gaegan(object):
             ori_adj_diag = tf.matrix_diag(tf.matrix_diag_part(self.adj_ori_dense))  # diagnal matrix
             new_adj_diag = tf.matrix_diag(tf.matrix_diag_part(self.x_tilde))  # diagnal matrix
             ori_adj_diag = tf.reshape(ori_adj_diag, [-1])
-            # new_adj_diag = tf.reshape(new_adj_diag, [-1])
             new_adj_flat = tf.reshape(self.x_tilde, [-1])
             ori_adj_flat = tf.reshape(self.adj_ori_dense, [-1])
             # doing the softmax function
@@ -100,13 +99,15 @@ class gaegan(object):
                                            y=tf.zeros_like(new_adj_for_del_exp), name="softmax_mask")
             new_adj_for_del_softmax = new_adj_for_del_exp / tf.reduce_sum(new_adj_for_del_exp)
             new_adj_for_del_softmax = tf.reshape(new_adj_for_del_softmax, [-1])
-            ##
-            ### prepare the matrix for delete k features
+            ###################3
+            ####### prepare the matrix for delete k features
 
             node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
-                tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x, transpose_b=True))))
+                tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x,
+                                                     transpose_b=True))))  ## firstly we proposed the node samples distribution
             #node_sample_dist = tf.nn.sigmoid(
-            #    tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x, transpose_b=True)))
+            #    tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x,
+            #                                         transpose_b=True)))
 
             Z_tilde = FullyConnect(output_size=self.input_dim, scope="generate_flip_weight")(self.z_x)
             Z_new = self.feature_dense + Z_tilde
@@ -131,6 +132,7 @@ class gaegan(object):
                                                                                           ori_adj_diag, k=FLAGS.k)
             self.new_adj_outlist.append(self.new_adj_output)
             self.reward_percent_list.append(reward_per)
+
             #self.new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
             #self.new_fliped_features, percentage_features = self.flip_features(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
             # self.new_fliped_features, percentage_features, self.node_per,self.fea_per = self.flip_features_onehot_once(node_sample_dist,
@@ -171,8 +173,12 @@ class gaegan(object):
             self.new_adj_without_norm = self.new_adj_output
             self.new_adj_output = self.normalize_graph(self.new_adj_output)   # this time normalize the graph with D-1/2A D-1/2
         ####!!!!!!!the self.new_adj_output is the new adj we got from generator  it is f(X) for the reg loss
-        # _,self.ori_logits,_ = self.d_GCN(self.inputs, self.new_adj_output)
-        # _,self.mod_pred,_ = self.d_GCN(self.inputs, self.adj_dense, reuse = True)
+            ## this is the discriminator for gaegan it is the enviorment
+            # self.vaeD_tilde = self.discriminate_mock_detect(self.inputs,
+            #                                                                                   self.new_adj_output)
+            # self.realD_tilde = self.discriminate_mock_detect(self.inputs, self.adj_dense,
+            #                                                                                reuse=True)
+
         return
 
     def delete_k_edge_min_new_onehot_once(self, new_adj_for_del_softmax, upper_bool_label, new_adj_flat, ori_adj_flat, ori_adj_diag,
@@ -205,7 +211,7 @@ class gaegan(object):
         indices = tf.stack([row_idx, col_idx], axis = -1)
         values = np.ones([int(indices.shape[0])])
         shape = [self.n_samples, self.n_samples]
-        delete_mask_sparse = tf.SparseTensor(indices, values, shape)
+        delete_mask_sparse = tf.SparseTensor(indices, values, shape)    # add the sparse tensors
         delete_mask_sparse = tf.cast(delete_mask_sparse, tf.bool)
         ##
         # for i in range(k):
@@ -447,7 +453,7 @@ class gaegan(object):
             indices = tf.stack([row_idx, col_idx], axis=-1)
             values = np.ones([int(indices.shape[0])])
             shape = [self.n_samples, self.input_dim]
-            delete_mask_sparse = tf.SparseTensor(indices, values, shape)
+            delete_mask_sparse = tf.SparseTensor(indices, values, shape)   # form the sparse matrix
             delete_mask_sparse = tf.cast(delete_mask_sparse, tf.bool)
             ## then we change the features
             # for i in range(k):
@@ -544,7 +550,7 @@ class gaegan(object):
         return reconstructions
 
 
-
+    ## this is the enviorment of the problem.
     def discriminate_mock_detect(self, inputs,new_adj,  reuse = False):
         # this methods uses this part to mock the community detection algorithm
         with tf.variable_scope('discriminate') as scope:
@@ -568,19 +574,19 @@ class gaegan(object):
                                            logging=self.logging, name='dis_conv2')((self.dis_hidden, new_adj))
             ############################
             self.dis_z_mean_norm = tf.nn.softmax(self.dis_z_mean, axis = -1)
-            for targets in self.target_list:
-                targets_indices = [[x] for x in targets]
-                #self.G_target_pred = model.vaeD_tilde[targets, :]
-                self.Dis_target_pred = tf.gather_nd(self.dis_z_mean_norm, targets_indices)
-                self.Dis_target_pred_out = self.Dis_target_pred
-                ## calculate the KL divergence
-                for i in range(len(targets)):
-                    for j in range(i + 1, len(targets)):
-                        if ((i == 0) and (j == 1)):
-                            self.Dis_comm_loss_KL = tf.reduce_sum(
-                                (self.Dis_target_pred[i] * tf.log(self.Dis_target_pred[i] / self.Dis_target_pred[j])))
-                        else:
-                            self.Dis_comm_loss_KL += tf.reduce_sum((self.Dis_target_pred[i] * tf.log(self.Dis_target_pred[i] / self.Dis_target_pred[j])))
+            # for targets in self.target_list:
+            #     targets_indices = [[x] for x in targets]
+            #     #self.G_target_pred = model.vaeD_tilde[targets, :]
+            #     self.Dis_target_pred = tf.gather_nd(self.dis_z_mean_norm, targets_indices)
+            #     self.Dis_target_pred_out = self.Dis_target_pred
+            #     ## calculate the KL divergence   # this time we just calculate teh modularity
+            #     for i in range(len(targets)):
+            #         for j in range(i + 1, len(targets)):
+            #             if ((i == 0) and (j == 1)):
+            #                 self.Dis_comm_loss_KL = tf.reduce_sum(
+            #                     (self.Dis_target_pred[i] * tf.log(self.Dis_target_pred[i] / self.Dis_target_pred[j])))
+            #             else:
+            #                 self.Dis_comm_loss_KL += tf.reduce_sum((self.Dis_target_pred[i] * tf.log(self.Dis_target_pred[i] / self.Dis_target_pred[j])))
             # to maximize the KL is to minimize the neg KL
 
             ############################
@@ -589,8 +595,15 @@ class gaegan(object):
             # the softmax layer for the model
             self.dis_output_softmax = tf.nn.softmax(self.dis_output, axis=-1)
             #self.dis_output = self.dis_z_mean
-        return self.dis_output_softmax, self.Dis_comm_loss_KL,self.Dis_target_pred_out
 
+            ## add the modularity to check the reward
+            #self.modularity(self.dis_output_softmax, self.adj_ori_dense)
+
+
+
+            #########################################
+        #return self.dis_output_softmax, self.Dis_comm_loss_KL,self.Dis_target_pred_out
+        return self.dis_output_softmax #self.Dis_target_pred_out
     def d_GCN(self, inputs,new_adj,  reuse = False):
         # this methods uses this part to mock the community detection algorithm
         with tf.variable_scope('discriminate') as scope:
@@ -635,7 +648,6 @@ class gaegan(object):
         adj_normalized = tf.matmul(tf.matmul(adj_, tf.transpose(degree_mat_inv_sqrt)), degree_mat_inv_sqrt)
         return adj_normalized
 
-
     def normalize_graph_new(self,adj):
         # convert adj into 0 and 1
         rowsum = tf.reduce_sum(adj, axis = -1)
@@ -648,4 +660,35 @@ class gaegan(object):
         # degree_mat_inv_sqrt = sp.diags(np.power(rowsum, -0.5).flatten())
         # adj_normalized = adj_.dot(degree_mat_inv_sqrt).transpose().dot(degree_mat_inv_sqrt).tocoo()
         return adj_normalized
+
+    ## it is hard to implement in tensorflow
+    def modularity(self, comm_res,adj_dense, n_clusters):
+        node_comm = tf.argmax(comm_res, axis=-1)  ## get the community
+        edges_num = tf.reduce_sum(self.adj_dense - tf.matrix_diag(tf.diag_part(adj_dense))) / 2
+        inc_list = []
+        for i in range(n_clusters):
+            inc_list.append(tf.Tensor(0, dtype = tf.float32))
+
+        deg_list = tf.reduce_sum(adj_dense, axis = -1)
+        for i in range(self.n_samples):
+            rows = tf.slice(adj_dense, [i,0], [1,self.n_samples])
+            neighbor_idx = tf.where(tf.equal(rows,tf.constant(1.0)))
+            neighbor_comm = tf.gather(node_comm, neighbor_idx[:,1])
+            neighbor_selected = tf.where(tf.equal(neighbor_comm, node_comm[i]))
+            inc_sum = tf.reduce_sum(tf.cast(neighbor_selected, tf.float32))
+            inc_list[i] = inc_list[i] + inc_sum
+        return
+    def density(self, comm_res, adj_dense, n_clusters):
+        node_comm = tf.argmax(comm_res, axis =-1)
+        edges_num = tf.reduce_sum(self.adj_dense - tf.matrix_diag(tf.diag_part(adj_dense)))
+        for i in range(n_clusters):
+            selected_node = tf.where(tf.equal(node_comm, tf.constant(i)))
+            selected_row_adj = tf.gather(adj_dense, selected_node)
+            selected_adj = tf.gather(selected_row_adj, selected_node, axis = 1)
+            if i == 0:
+                edges_comm = tf.reduce_sum(selected_adj)
+            else:
+                edges_comm += tf.reduce_sum(selected_adj)
+        density = edges_comm / edges_num
+        return density
     pass
