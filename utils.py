@@ -647,7 +647,12 @@ def add_edges_between_labels(adj,k, y_train):
     selected_edges = different_labels_edges[selected_idx_of]
     adj_out[selected_edges[:,0], selected_edges[:,1]] = 1
     adj_out[selected_edges[:,1], selected_edges[:,0]] = 1
-    return adj_out
+    add_idxes = selected_edges[:,0] * adj_orig_dense.shape[0] + \
+                selected_edges[:,1]
+    add_idxes_other = selected_edges[:,1] * adj_orig_dense.shape[0] + \
+                selected_edges[:,0]
+    add_idxes = np.append(add_idxes, add_idxes_other)
+    return adj_out,  add_idxes
 
 
 def randomly_delete_edges(adj, k):
@@ -680,6 +685,17 @@ def randomly_flip_features(features, k,seed):
         else:
            features_lil[flip_node_idx[i], flip_fea_idx[i]] = 1
     return features_lil.tocsr()
+
+def denoise_ratio(add_idxes, delete_idxes):
+    """
+    check the ratio between the add edges and delted edges
+    """
+    add_set = set(add_idxes)
+    del_set = set(delete_idxes)
+    union = add_set.intersection(del_set)
+    num = len(union)
+    ratio = num / len(add_set)
+    return ratio, num
 
 if __name__ == "__main__":
     from gcn.utils import load_data

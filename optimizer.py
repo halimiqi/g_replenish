@@ -76,7 +76,9 @@ class Optimizergaegan(object):
             #                                                             self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only(model,
             #                                                            self.G_comm_loss)
-            self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current(model,
+            # self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current(model,
+            #                                                                           self.G_comm_loss)
+            self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current_density(model,
                                                                                       self.G_comm_loss)
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
@@ -93,9 +95,9 @@ class Optimizergaegan(object):
                 self.G_min_op = self.generate_optimizer.minimize(self.G_comm_loss, global_step=global_step,
                                                                  var_list=generate_varlist)
             ######################################################
-            #self.D_loss = self.dis_cutmin_loss_clean(model)
-            #self.D_min_op = self.discriminate_optimizer.minimize(self.D_loss, global_step = global_step,
-            #                                                     var_list = discriminate_varlist)
+            self.D_loss = self.dis_cutmin_loss_clean(model)
+            self.D_min_op = self.discriminate_optimizer.minimize(self.D_loss, global_step = global_step,
+                                                                 var_list = discriminate_varlist)
     def reg_loss_many_samples(self, model, G_comm_loss):
         for idx, x_tilde_deleted in enumerate(model.x_tilde_list):
             self.reg = 0
@@ -553,8 +555,68 @@ class Optimizergaegan(object):
             #    G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
         G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
+
+    def reg_loss_no_sample_reverse_edges_only_ori_current_density(self, model,
+                                                          G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        self.reward_list = []
+        self.percentage_all = 0
+        for idx, adj_deleted in enumerate(model.new_adj_outlist):
+            self.reg = 0
+            # adj_deleted_mat = model.adj_ori_dense
+            ### the Laplacian loss here we should use the real new one
+            # adj_deleted_mat = tf.reshape(adj_deleted, shape=[self.num_nodes, self.num_nodes])
+            # rowsum = tf.reduce_sum(adj_deleted_mat, axis=1)
+            # rowsum = tf.matrix_diag(rowsum)
+            # self.g_delta = rowsum - adj_deleted_mat
+            # temp = tf.matmul(tf.transpose(model.feature_dense), self.g_delta)
+            # self.reg_mat = tf.matmul(temp, model.feature_dense)
+            # ###### grab non zero part
+            # # self.reg = tf.gather_nd(self.reg_mat, tf.where(self.reg_mat > 0))   # set the bigger then
+            # ###### norm version
+            # # self.reg = tf.square(tf.norm(self.reg_mat))
+            # ###### trace version
+            # self.reg = tf.trace(self.reg_mat)
+            # self.reg_trace = self.reg
+            # #self.reg = tf.log(self.reg + 1)
+            # self.reg = tf.log(self.reg)
+            # # self.reg_log = self.reg
+            # self.reg_log = self.reg
+            #self.reg = self.reg * 0.1
+            #self.reg = 1 / (self.reg + 1e-10)
+            #### L1 - L2 to replace the laplacian
+            self.reg = model.vaeD_density      ## bigger is better
+            self.reg = FLAGS.reward_para * self.reg
+            #####
+            ## self.G_comm_loss
+            # eij = tf.gather_nd(model.x_tilde_deleted, tf.where(model.x_tilde_deleted > 0))
+            # eij = tf.reduce_sum(tf.log(eij))
+            # self.G_comm_loss = (-1)* self.mu * eij + FLAGS.G_KL_r * self.G_comm_loss_KL
+            self.percentage_edge = model.reward_percent_list[0]
+            #else:
+            #    G_comm_loss_mean += self.reg
+            #    self.reward_list.append(self.reg)
+            #    self.percentage_all += model.percentage_list_all[idx]
+        #G_comm_loss_mean = G_comm_loss_mean / len(model.new_adj_outlist)
+        #### if we need the softmax function for this part
+        # new_percent_softmax = tf.nn.softmax(model.percentage_list_all)
+        # self.new_percent_softmax = new_percent_softmax
+        ########
+                # G_comm_loss = (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+            G_comm_loss = (self.percentage_edge) * (self.reg)
+            #else:
+            #    # G_comm_loss += (model.reward_percent_list[idx] / self.percentage_all) * (item - G_comm_loss_mean)
+            #    G_comm_loss += (new_percent_softmax[idx]) * (item - G_comm_loss_mean)
+        G_comm_loss = (-1) * G_comm_loss
+        return G_comm_loss
+
     def dis_cutmin_loss_clean(self, model):
-        import pdb; pdb.set_trace()
         A_pool = tf.matmul(
             tf.transpose(tf.matmul(model.adj_ori_dense, model.realD_tilde)), model.realD_tilde)
         num = tf.diag_part(A_pool)

@@ -3,7 +3,7 @@ import random
 import tensorflow.contrib.slim as slim
 #from utils import mkdir_p
 from utils import randomly_add_edges, randomly_delete_edges, randomly_flip_features
-from utils import add_edges_between_labels
+from utils import add_edges_between_labels, denoise_ratio
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
@@ -39,7 +39,7 @@ FLAGS = flags.FLAGS
 ##### this is for gae part
 flags.DEFINE_integer('n_clusters', 7, 'Number of epochs to train.')    # this one can be calculated according to labels
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
-flags.DEFINE_integer('epochs', 1200, 'Number of epochs to train.')
+flags.DEFINE_integer('epochs', 2400, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('hidden3', 32, 'Number of units in graphite hidden layers.')
@@ -74,7 +74,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-03, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 1000, "The k edges to delete")
+flags.DEFINE_integer("k", 100, "The k edges to delete")
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
@@ -152,7 +152,7 @@ def train():
                                         shape=adj_orig.shape)  # delete self loop
     adj_orig.eliminate_zeros()
     #adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
-    adj_new = add_edges_between_labels(adj_orig, FLAGS.k, y_train)
+    adj_new , add_idxes= add_edges_between_labels(adj_orig, FLAGS.k, y_train)
     features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
     ####################   check the laplacian lower bound ##########
@@ -271,9 +271,12 @@ def train():
         slim.model_analyzer.analyze_vars(model_vars,print_info=True)
     model_summary()
     #####################################################
+    reg_trace = 0
+    edge_percent = 0
     last_reg = 0
     current_reg = 0
     G_loss_min = 1000
+    D_loss = 0
     for epoch in range(FLAGS.epochs):
         t = time.time()
         # run Encoder's optimizer
@@ -281,44 +284,63 @@ def train():
         # run G optimizer  on trained model
         last_reg = current_reg
         if restore_trained_our:
-            _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
-                                                                opt.percentage_edge], feed_dict=feed_dict, options = run_options)
+            # _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
+            #                                                     opt.percentage_edge], feed_dict=feed_dict, options=run_options)
+            _, current_reg, edge_percent = sess.run([opt.G_min_op, opt.reg,
+                                                                opt.percentage_edge], feed_dict=feed_dict,
+                                                               options=run_options)
             sess.run(tf.assign(opt.last_reg, current_reg))
         else: # it is the new model
-            if epoch < FLAGS.epochs:  ## here we can contorl the manner of new model
+            if epoch > int(FLAGS.epochs / 2):  ## here we can contorl the manner of new model
                 # sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
-                _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
-                                                                    opt.percentage_edge], feed_dict=feed_dict, options=run_options)
+                # _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
+                #                                                     opt.percentage_edge], feed_dict=feed_dict, options=run_options)
+                _, current_reg, edge_percent,density_ori, deleted_idxes = sess.run([opt.G_min_op, opt.reg,
+                                                                    opt.percentage_edge, model.vaeD_density
+                                                                     ,model.new_indexes], feed_dict=feed_dict,
+                                                                   options=run_options)
                 sess.run(tf.assign(opt.last_reg, current_reg))
+            else:
+                _,current_reg, edge_percent, density_ori, deleted_idxes = sess.run([opt.D_min_op,opt.reg, opt.percentage_edge, model.vaeD_density, model.new_indexes], feed_dict = feed_dict, options = run_options)
         ##
+                import pdb; pdb.set_trace()
         ##
         if epoch % 50 == 0:
+            if epoch > int(FLAGS.epochs / 2):
+                print("This is the vae part")
+            else:
+                print("This is training the discriminator")
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-            G_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.reg,new_learning_rate],feed_dict=feed_dict,  options = run_options)
+            G_loss, D_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.D_loss ,opt.reg,new_learning_rate],feed_dict=feed_dict,  options = run_options)
             #new_adj = get_new_adj(feed_dict, sess, model)
             new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
             temp_pred = new_adj.reshape(-1)
             #temp_ori = adj_norm_sparse.todense().A.reshape(-1)
             temp_ori = adj_label_sparse.todense().A.reshape(-1)
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
-            print("Step: %d,G: loss=%.7f ,Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,laplacian_para, mutual_info,new_learn_rate_value))
+            print("Step: %d,G: loss=%.7f ,D: loss=%.7f, Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,D_loss, laplacian_para, mutual_info,new_learn_rate_value))
             ## here is the debug part of the model#################################
             # reg_trace, reward_ratio = sess.run([opt.reg_trace, opt.percentage_edge], feed_dict=feed_dict)
-            print("reg_trace is:")
-            print(reg_trace)
-            print("reg_log is:")
+            ratio, num = denoise_ratio(add_idxes, deleted_idxes)
+            print("The number of union edges")
+            print(num)
+            # print("reg_trace is:")
+            # print(reg_trace)
+            print("original density")
+            print(density_ori)
+            print("current_density is:")
             print(current_reg)
-            print("last reg_log is:")
-            print(last_reg)
+            # print("last reg_log is:")
+            # print(last_reg)
             print("reward_percentage")
             print(edge_percent)
-            print("original_reg_trace")
-            print(ori_Lap_trace)
-            print("original_reg_log")
-            print(ori_Lap_log)
-            print("clean_reg_log")
-            print(clean_Lap_log)
+            # print("original_reg_trace")
+            # print(ori_Lap_trace)
+            # print("original_reg_log")
+            # print(ori_Lap_log)
+            # print("clean_reg_log")
+            # print(clean_Lap_log)
             #new_features_csr = sp.csr_matrix(new_features)
             ##########################################
             #';# check the D_loss_min
