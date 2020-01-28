@@ -74,7 +74,7 @@ flags.DEFINE_float("learn_rate_init" , 1e-03, "the init of learn rate")
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 100, "The k edges to delete")
+flags.DEFINE_integer("k", 5000, "The k edges to delete")
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
@@ -207,7 +207,7 @@ def train():
     # build models
     model = None
     if model_str == "gae_gan":
-        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate)
+        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate, indexes_add = add_idxes)
         model.build_model()
     pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
     norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
@@ -276,12 +276,16 @@ def train():
     last_reg = 0
     current_reg = 0
     G_loss_min = 1000
+    inter_num = 0
     D_loss = 0
+    density_0 = 0
+    inter_num_0 = 0
     for epoch in range(FLAGS.epochs):
         t = time.time()
         # run Encoder's optimizer
         #sess.run(opt.encoder_min_op, feed_dict=feed_dict)
-        # run G optimizer  on trained model
+        # run G optimizer  on trained mode
+        ########
         last_reg = current_reg
         if restore_trained_our:
             # _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
@@ -295,15 +299,22 @@ def train():
                 # sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
                 # _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
                 #                                                     opt.percentage_edge], feed_dict=feed_dict, options=run_options)
-                _, current_reg, edge_percent,density_ori, deleted_idxes = sess.run([opt.G_min_op, opt.reg,
+                _, current_reg, edge_percent,density_ori, inter_num = sess.run([opt.G_min_op, opt.reward_and_per,
                                                                     opt.percentage_edge, model.vaeD_density
-                                                                     ,model.new_indexes], feed_dict=feed_dict,
+                                                                     ,model.inter_num], feed_dict=feed_dict,
                                                                    options=run_options)
                 sess.run(tf.assign(opt.last_reg, current_reg))
             else:
-                _,current_reg, edge_percent, density_ori, deleted_idxes = sess.run([opt.D_min_op,opt.reg, opt.percentage_edge, model.vaeD_density, model.new_indexes], feed_dict = feed_dict, options = run_options)
+                _,current_reg, edge_percent, density_ori, inter_num = sess.run([opt.D_min_op,opt.reward_and_per,
+                                                                                opt.percentage_edge,
+                                                                                model.vaeD_density,
+                                                                                model.inter_num],
+                                                                               feed_dict = feed_dict,
+                                                                               options = run_options)
         ##
-                import pdb; pdb.set_trace()
+        if epoch == 0:
+            density_0 = density_ori
+            inter_num_0 = inter_num
         ##
         if epoch % 50 == 0:
             if epoch > int(FLAGS.epochs / 2):
@@ -312,24 +323,26 @@ def train():
                 print("This is training the discriminator")
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-            G_loss, D_loss, laplacian_para,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.D_loss ,opt.reg,new_learning_rate],feed_dict=feed_dict,  options = run_options)
+            G_loss, D_loss,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.D_loss,new_learning_rate],feed_dict=feed_dict,  options = run_options)
             #new_adj = get_new_adj(feed_dict, sess, model)
             new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
             temp_pred = new_adj.reshape(-1)
             #temp_ori = adj_norm_sparse.todense().A.reshape(-1)
             temp_ori = adj_label_sparse.todense().A.reshape(-1)
             mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
-            print("Step: %d,G: loss=%.7f ,D: loss=%.7f, Lap_para: %f  ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,D_loss, laplacian_para, mutual_info,new_learn_rate_value))
+            print("Step: %d,G: loss=%.7f ,D: loss=%.7f ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,D_loss, mutual_info,new_learn_rate_value))
             ## here is the debug part of the model#################################
-            # reg_trace, reward_ratio = sess.run([opt.reg_trace, opt.percentage_edge], feed_dict=feed_dict)
-            ratio, num = denoise_ratio(add_idxes, deleted_idxes)
+            # ratio, num = denoise_ratio(add_idxes, deleted_idxes) ## intersect
+                                                                   ## edges
             print("The number of union edges")
-            print(num)
+            print(inter_num)
             # print("reg_trace is:")
             # print(reg_trace)
-            print("original density")
+            print("density_original")
+            print(density_0)
+            print("current density")
             print(density_ori)
-            print("current_density is:")
+            print("current_reward is:")
             print(current_reg)
             # print("last reg_log is:")
             # print(last_reg)

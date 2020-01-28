@@ -12,9 +12,10 @@ FLAGS = flags.FLAGS
 
 
 class gaegan(object):
-    def __init__(self,placeholders, num_features,num_nodes, features_nonzero,learning_rate_init ,if_drop_edge = True, **kwargs):
+    def __init__(self,placeholders, num_features,num_nodes, features_nonzero,
+                 learning_rate_init ,if_drop_edge = True, **kwargs):
         # processing the name and the logging
-        allowed_kwargs = {'name', 'logging'}
+        allowed_kwargs = {'name', 'logging', 'indexes_add'}
         for kwarg in kwargs.keys():
             assert kwarg in allowed_kwargs, 'Invalid keyword argument: ' + kwarg
 
@@ -48,6 +49,7 @@ class gaegan(object):
         self.test_mask_feature = tf.one_hot(10, self.n_samples * self.input_dim,
                                             on_value = True,
                                             off_value = False,dtype= tf.bool)
+        self.indexes_add_orig = kwargs["indexes_add"]
         #######################################
         return
 
@@ -133,7 +135,8 @@ class gaegan(object):
                                                                                           ori_adj_diag, k=FLAGS.k)
             self.new_adj_outlist.append(self.new_adj_output)
             self.reward_percent_list.append(reward_per)
-
+            ########## calculate the intersect edges in the model
+            self.inter_num = self.intersect_edges(self.new_indexes, self.indexes_add_orig)
             #self.new_fliped_features, percentage_features = self.flip_features(self.adj_ori,self.inputs, self.z_x, k = FLAGS.k, reuse = False)
             #self.new_fliped_features, percentage_features = self.flip_features(node_sample_dist, self.feature_flip_dist, self.inputs, k = FLAGS.k, reuse = False)
             # self.new_fliped_features, percentage_features, self.node_per,self.fea_per = self.flip_features_onehot_once(node_sample_dist,
@@ -695,7 +698,10 @@ class gaegan(object):
         density = edges_comm / edges_num
         return density
 
-    def intersect_edges(self,indexes_first, indexes_orig):
-
-        return
+    def intersect_edges(self,indexes_delete, indexes_orig):
+        intersect = tf.sets.set_intersection(indexes_delete[None,:],
+                                             indexes_orig[None,:])
+        intersect = tf.sparse_tensor_to_dense(intersect)
+        length = tf.ones_like(intersect)
+        return tf.reduce_sum(length)
     pass
