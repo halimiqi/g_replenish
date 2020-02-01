@@ -44,7 +44,15 @@ class OptimizerVAE(object):
 class Optimizergaegan(object):
     def __init__(self, preds, labels, model, num_nodes, pos_weight, norm,
                  global_step, new_learning_rate,ori_reg_log,
-                 if_drop_edge = True):
+                 if_drop_edge = True, **kwargs):
+        allowed_kwargs = {'placeholders'}
+        for kwarg in kwargs.keys():
+            assert kwarg in allowed_kwargs, 'Invalid keyword argument: ' + kwarg
+        #noised_indexes = kwargs.get("noised_indexes")
+        placeholders = kwargs.get("placeholders")
+        noised_indexes = placeholders["noised_mask"]
+        clean_indexes = placeholders["clean_mask"]
+        #noised_indexes = tf.Variable([1,1], dtype = tf.int32,trainable = False)
         en_preds_sub = preds
         en_labels_sub = labels
         self.opt_op = 0  # this is the minimize function
@@ -78,8 +86,9 @@ class Optimizergaegan(object):
             #                                                            self.G_comm_loss)
             # self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current(model,
             #                                                                           self.G_comm_loss)
-            self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current_intersect(model,
-                                                                                      self.G_comm_loss)
+            #self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current_intersect(model,
+            #                                                                          self.G_comm_loss)
+            self.G_comm_loss = self.loss_cross_entropy_logits(model, noised_indexes,clean_indexes, self.G_comm_loss)
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
             if FLAGS.generator == "graphite":
@@ -603,6 +612,43 @@ class Optimizergaegan(object):
             self.reward_and_per = (self.percentage_edge) * (self.reg)
         G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
+    def loss_cross_entropy_logits(self, model,noised_indexes, clean_indexes, G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        noised_indexes_2d = tf.stack([noised_indexes //self.num_nodes,
+                                      noised_indexes % self.num_nodes], axis = -1)
+        clean_indexes_2d = tf.stack([noised_indexes // self.num_nodes,
+                                     noised_indexes % self.num_nodes], axis =-1)
+        adj_ori = model.adj_ori_dense - \
+            tf.matrix_diag(tf.diag_part(model.adj_ori_dense))
+        #clean_mask = tf.where(tf.equal(adj_ori, 1))
+        clean_mask = clean_indexes_2d
+        real_pred = tf.gather_nd(model.x_tilde_output_ori,clean_mask)
+        fake_pred = tf.gather_nd(model.x_tilde_output_ori, noised_indexes_2d)
+        loss_real = tf.nn.sigmoid_cross_entropy_with_logits(labels = tf.ones_like(real_pred), logits = real_pred)
+        loss_fake = tf.nn.sigmoid_cross_entropy_with_logits(labels = tf.zeros_like(fake_pred), logits = fake_pred)
+        G_comm_loss = tf.reduce_mean(loss_real) +tf.reduce_mean(loss_fake)
+        # self.reward_list = []
+        # self.percentage_all = 0
+        # for idx, adj_deleted in enumerate(model.new_adj_outlist):
+        #    self.reg = 0
+        #    #### L1 - L2 to replace the laplacian
+        #    self.reg = tf.cast(model.inter_num, tf.float32)      ## bigger is better
+
+        #    self.reg = FLAGS.reward_para * self.reg
+
+            #####
+        #    self.percentage_edge = model.reward_percent_list[0]
+        #    G_comm_loss = (self.percentage_edge) * (self.reg)
+        #    self.reward_and_per = (self.percentage_edge) * (self.reg)
+        #G_comm_loss = (-1) * G_comm_loss
+        return G_comm_loss
+
 
 
     def dis_cutmin_loss_clean(self, model):

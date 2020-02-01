@@ -3,7 +3,7 @@ import random
 import tensorflow.contrib.slim as slim
 #from utils import mkdir_p
 from utils import randomly_add_edges, randomly_delete_edges, randomly_flip_features
-from utils import add_edges_between_labels, denoise_ratio
+from utils import add_edges_between_labels, denoise_ratio, get_noised_indexes
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import average_precision_score
 from sklearn.preprocessing import normalize
@@ -39,7 +39,7 @@ FLAGS = flags.FLAGS
 ##### this is for gae part
 flags.DEFINE_integer('n_clusters', 7, 'Number of epochs to train.')    # this one can be calculated according to labels
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
-flags.DEFINE_integer('epochs', 2400, 'Number of epochs to train.')
+flags.DEFINE_integer('epochs', 450, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('hidden3', 32, 'Number of units in graphite hidden layers.')
@@ -58,7 +58,7 @@ flags.DEFINE_float('g_scale_factor', 1- 0.75/2, 'the parametor for generate fake
 flags.DEFINE_float('d_scale_factor', 0.25, 'the parametor for discriminator real loss')
 flags.DEFINE_float('g_gamma', 1e-06, 'the parametor for generate loss, it has one term with encoder\'s loss')
 flags.DEFINE_float('G_KL_r', 0.1, 'The r parameters for the G KL loss')
-flags.DEFINE_float('mincut_r', 0.01, 'The r parameters for the cutmin loss orth loss')
+flags.DEFINE_float('mincut_r', 0.3, 'The r parameters for the cutmin loss orth loss')
 flags.DEFINE_float('autoregressive_scalar', 0.2, 'the parametor for graphite generator')
 flags.DEFINE_string('model', 'gae_gan', 'Model string.')
 flags.DEFINE_string('generator', 'dense', 'Which generator will be used') # the options are "inner_product", "graphite", "graphite_attention", "dense_attention" , "dense"
@@ -69,12 +69,12 @@ from tensorflow.python.client import device_lib
 flags.DEFINE_integer("batch_size" , 64, "batch size")
 flags.DEFINE_integer("max_iters" , 600000, "the maxmization epoch")
 flags.DEFINE_integer("latent_dim" , 16, "the dim of latent code")
-flags.DEFINE_float("learn_rate_init" , 1e-03, "the init of learn rate")
+flags.DEFINE_float("learn_rate_init" , 1e-02, "the init of learn rate")
 #Please set this num of repeat by the size of your datasets.
 flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
-flags.DEFINE_integer("k", 5000, "The k edges to delete")
+flags.DEFINE_integer("k", 1000, "The k edges to delete")
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
@@ -111,14 +111,14 @@ if FLAGS.features == 0:
     features = sp.identity(features.shape[0])  # featureless
 # Some preprocessing
 
-placeholders = {
-    'features': tf.sparse_placeholder(tf.float32, name="ph_features"),
-    'adj': tf.sparse_placeholder(tf.float32, name="ph_adj"),
-    'adj_orig': tf.sparse_placeholder(tf.float32, name="ph_orig"),
-    'dropout': tf.placeholder_with_default(0., shape=(), name="ph_dropout"),
+#placeholders = {
+#    'features': tf.sparse_placeholder(tf.float32, name="ph_features"),
+#    'adj': tf.sparse_placeholder(tf.float32, name="ph_adj"),
+#    'adj_orig': tf.sparse_placeholder(tf.float32, name="ph_orig"),
+#    'dropout': tf.placeholder_with_default(0., shape=(), name="ph_dropout"),
     # 'node_labels': tf.placeholder(tf.float32, name="ph_node_labels"),
     # 'node_ids': tf.placeholder(tf.float32, name="ph_node_ids")
-}
+#}
 
 num_nodes = adj.shape[0]
 features_csr = features
@@ -142,7 +142,8 @@ val_roc_score = []
 
 
 def get_new_adj(feed_dict, sess, model):
-    new_adj = model.new_adj_without_norm.eval(session=sess, feed_dict=feed_dict)
+    new_adj = model.new_adj.eval(session=sess, feed_dict=feed_dict)
+    new_adj = new_adj - np.diag(np.diagonal(new_adj))
     return new_adj
 
 # Train model
@@ -152,7 +153,7 @@ def train():
                                         shape=adj_orig.shape)  # delete self loop
     adj_orig.eliminate_zeros()
     #adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
-    adj_new , add_idxes= add_edges_between_labels(adj_orig, FLAGS.k, y_train)
+    adj_new , add_idxes= add_edges_between_labels(adj_orig, FLAGS.k*2, y_train)
     features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
     ####################   check the laplacian lower bound ##########
@@ -201,13 +202,21 @@ def train():
         'adj': tf.sparse_placeholder(tf.float32,name= "ph_adj"),
         'adj_orig': tf.sparse_placeholder(tf.float32, name = "ph_orig"),
         'dropout': tf.placeholder_with_default(0., shape=(), name = "ph_dropout"),
+        'clean_mask': tf.placeholder(tf.int32),
+        'noised_mask': tf.placeholder(tf.int32),
+        'noised_num':tf.placeholder(tf.int32)
         # 'node_labels': tf.placeholder(tf.float32, name = "ph_node_labels"),
         # 'node_ids' : tf.placeholder(tf.float32, name = "ph_node_ids")
     }
     # build models
     model = None
+    adj_clean = adj_orig.tocoo()
+    adj_clean_tensor = tf.SparseTensor(indices =np.stack([adj_clean.row,adj_clean.col], axis = -1),
+                                       values = adj_clean.data, dense_shape = adj_clean.shape )
     if model_str == "gae_gan":
-        model = gaegan(placeholders, num_features, num_nodes, features_nonzero, new_learning_rate, indexes_add = add_idxes)
+        model = gaegan(placeholders, num_features, num_nodes, features_nonzero,
+                       new_learning_rate, indexes_add = add_idxes,
+                       adj_clean = adj_clean_tensor)
         model.build_model()
     pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
     norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
@@ -226,7 +235,8 @@ def train():
                                   norm=norm,
                                   global_step=global_steps,
                                   new_learning_rate = new_learning_rate,
-                                  ori_reg_log = ori_Lap_log
+                                  ori_reg_log = ori_Lap_log,
+                                  placeholders = placeholders
                                   )
     # init the sess
     sess = tf.Session()
@@ -250,11 +260,20 @@ def train():
     # else:  # if not restore the original then restore the base dis one.
     #     checkpoints_dir_base = os.path.join("./checkpoints/base", FLAGS.trained_base_path)
     #     saver.restore(sess, tf.train.latest_checkpoint(checkpoints_dir_base))
-
-    feed_dict = construct_feed_dict(adj_norm, adj_label, feature_new, placeholders)
+    ### initial clean and noised_mask
+    clean_mask = np.array([1,2,3,4,5])
+    noised_mask = np.array([6,7,8,9,10])
+    noised_num = noised_mask.shape[0] / 2
+    ##################################
+    feed_dict = construct_feed_dict(adj_norm, adj_label, feature_new,clean_mask, noised_mask,noised_num,  placeholders)
     feed_dict.update({placeholders['dropout']: FLAGS.dropout})
     # pred_dis_res = model.vaeD_tilde.eval(session=sess, feed_dict=feed_dict)
-
+    ### debug #####
+    #testnoised_index, testnew_indexes, test_sampled_dist = sess.run([model.test_noised_index,
+    #                                             model.test_new_indexes,
+    #                                              model.test_sampled_dist],
+    #                                             feed_dict = feed_dict)
+    #############
 
     #### save new_adj without norm#############
     if restore_trained_our:
@@ -296,25 +315,31 @@ def train():
             sess.run(tf.assign(opt.last_reg, current_reg))
         else: # it is the new model
             if epoch > int(FLAGS.epochs / 2):  ## here we can contorl the manner of new model
-                # sess.run(opt.G_min_op, feed_dict=feed_dict,  options = run_options)
-                # _, current_reg, reg_trace, edge_percent = sess.run([opt.G_min_op, opt.reg_log, opt.reg_trace,
-                #                                                     opt.percentage_edge], feed_dict=feed_dict, options=run_options)
-                _, current_reg, edge_percent,density_ori, inter_num = sess.run([opt.G_min_op, opt.reward_and_per,
-                                                                    opt.percentage_edge, model.vaeD_density
-                                                                     ,model.inter_num], feed_dict=feed_dict,
-                                                                   options=run_options)
-                sess.run(tf.assign(opt.last_reg, current_reg))
+                _= sess.run([opt.G_min_op], feed_dict=feed_dict,
+                                                           options=run_options)
+
+                new_adj = get_new_adj(feed_dict,sess, model)
+                # sess.run(tf.assign(opt.last_reg, current_reg))
             else:
-                _,current_reg, edge_percent, density_ori, inter_num = sess.run([opt.D_min_op,opt.reward_and_per,
-                                                                                opt.percentage_edge,
-                                                                                model.vaeD_density,
-                                                                                model.inter_num],
-                                                                               feed_dict = feed_dict,
-                                                                               options = run_options)
+                _, x_tilde = sess.run([opt.D_min_op, model.realD_tilde], feed_dict = feed_dict, options=run_options)
+                #### get the noised
+                if epoch == int(FLAGS.epochs / 2):
+                    noised_indexes, clean_indexes =  get_noised_indexes(x_tilde, adj_new)
+                ####
+                    feed_dict.update({placeholders["noised_mask"]: noised_indexes})
+                    feed_dict.update({placeholders["clean_mask"]: clean_indexes})
+                    feed_dict.update({placeholders["noised_num"]: len(noised_indexes)/2}) # because we noly sample one side
+                #sess.run(tf.assgin(opt.noised_indexes, noised_indexes, validate_shape = False))
+                #_,current_reg, edge_percent, density_ori, inter_num = sess.run([opt.D_min_op,opt.reward_and_per,
+                #                                                                opt.percentage_edge,
+                #                                                                model.vaeD_density,
+                #                                                                model.inter_num],
+                #                                                               feed_dict = feed_dict,
+                #                                                               options = run_options)
         ##
-        if epoch == 0:
-            density_0 = density_ori
-            inter_num_0 = inter_num
+        #if epoch == 0:
+            #density_0 = density_ori
+            # inter_num_0 = inter_num
         ##
         if epoch % 50 == 0:
             if epoch > int(FLAGS.epochs / 2):
@@ -323,31 +348,32 @@ def train():
                 print("This is training the discriminator")
             print("Epoch:", '%04d' % (epoch + 1),
                   "time=", "{:.5f}".format(time.time() - t))
-            G_loss, D_loss,new_learn_rate_value = sess.run([opt.G_comm_loss,opt.D_loss,new_learning_rate],feed_dict=feed_dict,  options = run_options)
+            G_loss,D_loss, new_learn_rate_value = sess.run([opt.G_comm_loss,opt.D_loss,new_learning_rate],feed_dict=feed_dict,  options = run_options)
             #new_adj = get_new_adj(feed_dict, sess, model)
-            new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
-            temp_pred = new_adj.reshape(-1)
+            #new_adj = model.new_adj_output.eval(session = sess, feed_dict = feed_dict)
+            #temp_pred = new_adj.reshape(-1)
             #temp_ori = adj_norm_sparse.todense().A.reshape(-1)
-            temp_ori = adj_label_sparse.todense().A.reshape(-1)
-            mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
-            print("Step: %d,G: loss=%.7f ,D: loss=%.7f ,info_score = %.6f, LR=%.7f" % (epoch, G_loss,D_loss, mutual_info,new_learn_rate_value))
+            #temp_ori = adj_label_sparse.todense().A.reshape(-1)
+            #mutual_info = normalized_mutual_info_score(temp_pred, temp_ori)
+            #print("Step: %d,G: loss=%.7f ,D: loss= %.7f,info_score = %.6f, LR=%.7f" % (epoch, G_loss,D_loss, mutual_info,new_learn_rate_value))
+            print("Step: %d,G: loss=%.7f ,D: loss= %.7f, LR=%.7f" % (epoch, G_loss,D_loss, new_learn_rate_value))
             ## here is the debug part of the model#################################
             # ratio, num = denoise_ratio(add_idxes, deleted_idxes) ## intersect
                                                                    ## edges
-            print("The number of union edges")
-            print(inter_num)
+            #print("The number of union edges")
+            #print(inter_num)
             # print("reg_trace is:")
             # print(reg_trace)
-            print("density_original")
-            print(density_0)
-            print("current density")
-            print(density_ori)
-            print("current_reward is:")
-            print(current_reg)
+            #print("density_original")
+            #print(desity_0)
+            #print("current density")
+            #print(density_ori)
+            #print("current_reward is:")
+            #print(current_reg)
             # print("last reg_log is:")
             # print(last_reg)
-            print("reward_percentage")
-            print(edge_percent)
+            #print("reward_percentage")
+            #print(edge_percent)
             # print("original_reg_trace")
             # print(ori_Lap_trace)
             # print("original_reg_log")
@@ -374,8 +400,8 @@ def train():
     new_adj = new_adj - np.diag(np.diag(new_adj))
     new_adj_sparse = sp.csr_matrix(new_adj)
     print((abs(new_adj_sparse - new_adj_sparse.T) > 1e-10).nnz == 0)
-    # new_adj_norm, new_adj_norm_sparse = preprocess_graph(new_adj)
-    # new_adj_norm_sparse_csr = new_adj_norm_sparse.tocsr()
+    new_adj_norm, new_adj_norm_sparse = preprocess_graph(new_adj)
+    new_adj_norm_sparse_csr = new_adj_norm_sparse.tocsr()
     # modified_model = GCN.GCN(sizes, new_adj_norm_sparse_csr, features_csr, with_relu=True, name="surrogate", gpu_id=gpu_id)
     # modified_model.train(new_adj_norm_sparse_csr, split_train, split_val, node_labels)
     # modified_acc = modified_model.test(split_unlabeled, node_labels, new_adj_norm_sparse_csr)
@@ -404,7 +430,7 @@ def train():
     # print("*#" * 15)
     # print("The modify both adj and feature and acc is : ")
     # print(testacc_new3)
-    return new_adj,testacc_clean, testacc, testacc_new    #, testacc_new2, testacc_new3
+    return new_adj,testacc_clean, testacc_upper, testacc_new    #, testacc_new2, testacc_new3
 ## delete edges between the targets and 1add some
 def base_line():
     target_budget = np.random.choice(len(target_list), FLAGS.baseline_target_budget, replace = False)

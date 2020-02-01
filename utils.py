@@ -697,6 +697,26 @@ def denoise_ratio(add_idxes, delete_idxes):
     ratio = num / len(add_set)
     return ratio, num
 
+def get_noised_indexes(x_tilde, adj):
+    noised_list = []
+    clean_list = []
+    node_comm = np.argmax(x_tilde, axis = 1)
+    clusters = x_tilde.shape[1]
+    for i in range(clusters):
+        nodes_idx = np.argwhere(node_comm == i)[:,0]
+        other_nodes_idx = np.argwhere(node_comm != i)[:,0]
+        for start_idx in nodes_idx:
+            for end_idx in other_nodes_idx:
+                if adj[start_idx, end_idx] == 1:
+                   idx = start_idx * adj.shape[0] + end_idx
+                   #other_idx = end_idx * adj.shape[0] + start_idx
+                   noised_list.append(idx)
+    adj_flatten = np.reshape(adj.todense(), [-1])
+    adj_flatten = np.squeeze(np.asarray(adj_flatten))
+    adj_all_indexes = np.argwhere(adj_flatten == 1)
+    clean_list = set(adj_all_indexes[:,0]).difference(set(noised_list))
+    return noised_list, list(clean_list)
+
 if __name__ == "__main__":
     from gcn.utils import load_data
     dense = np.diag(np.random.randint(1,100, size = 1000))
