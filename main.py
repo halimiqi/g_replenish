@@ -430,14 +430,14 @@ if __name__ == "__main__":
     #train_dis_base()
     current_time = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     with open("results/results_%d_%s.txt"%(FLAGS.k, current_time), 'w+') as f_out:
-        f_out.write("clean_acc" +" "+ "original_acc" + ' ' + 'modify_adj'+ ' ' + 'modify_feature' + ' ' + 'modify_both' + "\n")
+        f_out.write("clean_acc" +" "+ "noisedadj_acc" + ' ' + 'modify_adj'+ ' ' + 'modify_both' + ' ' + 'modify_both' + "\n")
         for i in range(1):
-            new_adj,testacc_clean, testacc_adj, testaccnew_adjfea = train()
+            new_adj,testacc_clean,testacc_noised_adj,  testacc_adj, testaccnew_adjfea = train()
             # testacc = 1.01
             # testaccnew1 = 1.01
             # testaccnew2 = 1.01
             # testaccnew3 = 1.01
-            f_out.write(str(testacc_clean)+" "+str(testacc_adj)+ ' '+str(testaccnew_adjfea)+ ' '+"\n")
+            f_out.write(str(testacc_clean)+" "+str(testacc_noised_adj)+ ' '+str(testaccnew_adjfea)+ ' '+"\n")
     # print("The original base model")
     #trained_dis_base(adj_norm, adj_label, if_ori = True)  #
     # print("The modified model base model")
