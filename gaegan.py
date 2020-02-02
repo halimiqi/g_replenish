@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+import optimizer
 import tensorflow as tf
 from layers import GraphConvolution, GraphConvolutionSparse,InnerProductDecoder, FullyConnect, Graphite, \
     GraphiteSparse,Scale,Dense,GraphiteSparse_simple, Graphite_simple,GraphConvolutionSparse_denseadj, GraphConvolution_denseadj
@@ -116,23 +117,26 @@ class gaegan(object):
                                                  self.indexes_add_orig,self.noised_num, FLAGS.k)
             ##########################
             ###################3
-            ####### prepare the matrix for delete k features
+            ####### get feature distributions accoring to eq 6 and 7
+            self.new_feature_prob = self.generate_feature_prob(self.z_x, self.feature_dense, self.input_dim, self.input_dim * 2)
+            self.flip_feature_indexes = self.flip_features_0202(k = FLAGS.k_features)
 
-            #node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
+            ############################################
+            # node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
             #    tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x,
             #                                         transpose_b=True))))  ## firstly we proposed the node samples distribution
-            #node_sample_dist = tf.nn.sigmoid(
+            # node_sample_dist = tf.nn.sigmoid(
             #    tf.linalg.tensor_diag_part(tf.matmul(tf.sparse.sparse_dense_matmul(self.adj_ori, self.z_x), self.z_x,
             #                                         transpose_b=True)))
 
-            #Z_tilde = FullyConnect(output_size=self.input_dim, scope="generate_flip_weight")(self.z_x)
-            #Z_new = self.feature_dense + Z_tilde
-            #rowsum = tf.sparse.reduce_sum(self.adj_ori, axis=0)
-            #rowsum = tf.matrix_diag(rowsum)
-            #D_A = rowsum - self.adj_ori_dense
-            #self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
-            #self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))  # the distribution for one node feature
-            #self.feature_flip_dist = tf.linalg.diag_part(self.feature_reg)  # the distribution for one node feature
+            # Z_tilde = FullyConnect(output_size=self.input_dim, scope="generate_flip_weight")(self.z_x)
+            # Z_new = self.feature_dense + Z_tilde
+            # rowsum = tf.sparse.reduce_sum(sself.adj_ori, axis=0)
+            # rowsum = tf.matrix_diag(rowsum)
+            # D_A = rowsum - self.adj_ori_dense
+            # self.feature_reg = tf.matmul(tf.matmul(Z_new, D_A, transpose_a=True), Z_new)
+            # self.feature_flip_dist = tf.nn.softmax(tf.linalg.diag_part(self.feature_reg))  # the distribution for one node feature
+            # self.feature_flip_dist = tf.linalg.diag_part(self.feature_reg)  # the distribution for one node feature
             #############
             # reward_per = 0
             #self.new_adj_output = self.adj_ori_dense
@@ -171,7 +175,6 @@ class gaegan(object):
             #                                                 self.new_adj_output)
             # self.realD_tilde, self.cleanD_density = self.discriminate_mock_detect(self.inputs, self.adj_dense,
             #                                                 reuse=True)
-
         return
 
     def delete_k_edge_min_new_onehot_once(self, new_adj_for_del_softmax, upper_bool_label, new_adj_flat, ori_adj_flat, ori_adj_diag,
@@ -406,7 +409,7 @@ class gaegan(object):
         noised_index = tf.squeeze(tf.stack([new_row,new_col], axis = -1))
         sampled_dist = tf.gather_nd(x_tilde, noised_index)
         sampled_dist = tf.reshape(sampled_dist, [-1])
-        sampled_dist = tf.reduce_max(sampled_dist) - sampled_dist
+        sampled_dist = tf.reduce_max(sampled_dist) - sampled_dist   # delete the edges with smallest edges
         sampled_dist = tf.nn.softmax(sampled_dist)
         #indexes = tf.random.categorical([tf.log(sampled_dist)], k)
         _, indexes = tf.nn.top_k(sampled_dist, tf.minimum(noised_num, k))
@@ -505,6 +508,16 @@ class gaegan(object):
             percentage_all = percentage_node + percentage_feature
         return new_features, percentage_all, percentage_node, percentage_feature
 
+    def flip_features_0202(self, k = 10, reuse = tf.AUTO_REUSE):
+        with tf.variable_scope("generate_flip_fea") as scope:
+            node_dist = tf.diag_part(optimizer.score)
+            node_dist = tf.reduce_max(node_dist) - node_dist
+            node_dist = tf.nn.softmax(node_dist)
+            ##### here we still ues topk to calculate
+            _, indexes = tf.nn.top_k(node_dist, tf.minimum(self.n_samples, k))
+
+        return indexes
+
     def encoder(self, inputs):
         with tf.variable_scope('encoder') as scope:
             self.hidden1 = GraphConvolutionSparse(input_dim=self.input_dim,
@@ -583,7 +596,17 @@ class gaegan(object):
             #reconstructions = tf.reshape(reconstructions, [self.n_samples, self.n_samples])
         return reconstructions
 
-
+    def generate_feature_prob(self, input_z,input_feature,input_dim, hidden1_dim, reuse = False):
+        with tf.variable_scope('generate_feature') as scope:
+            if reuse == True:
+                scope.reuse_variables()
+            h1 = FullyConnect(output_size=hidden1_dim, scope="generate_feature_full1")(input_z)
+            h1 = tf.nn.relu(h1)
+            H = FullyConnect(output_size=input_dim, scope="generate_feature_full2")(h1)
+            N = tf.nn.softmax(H, axis = -1)  # then shape of N is n*d
+            ones = tf.ones_like(input_feature)
+            X =input_feature * (1 - N) + (ones - input_feature) * N
+        return X,
     ## this is the enviorment of the problem.
     def discriminate_mock_detect(self, inputs,new_adj,  reuse = False):
         # this methods uses this part to mock the community detection algorithm

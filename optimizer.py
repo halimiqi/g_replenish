@@ -55,6 +55,7 @@ class Optimizergaegan(object):
         #noised_indexes = tf.Variable([1,1], dtype = tf.int32,trainable = False)
         en_preds_sub = preds
         en_labels_sub = labels
+        self.ratio_loss_fea = FLAGS.ratio_loss_fea
         self.opt_op = 0  # this is the minimize function
         self.cost = 0  # this is the loss
         self.accuracy = 0  # this is the accuracy
@@ -386,7 +387,7 @@ class Optimizergaegan(object):
         # G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
 
-    def reg_loss_no_smaple_reverse_features_only(self, model, G_comm_loss):
+    def reg_loss_no_sample_reverse_features_only(self, model, G_comm_loss):
         """
         The loss with samples on delete x_tilde and add the reward percentage from Q learning
         :param self:
@@ -622,8 +623,8 @@ class Optimizergaegan(object):
         """
         noised_indexes_2d = tf.stack([noised_indexes //self.num_nodes,
                                       noised_indexes % self.num_nodes], axis = -1)
-        clean_indexes_2d = tf.stack([noised_indexes // self.num_nodes,
-                                     noised_indexes % self.num_nodes], axis =-1)
+        clean_indexes_2d = tf.stack([clean_indexes // self.num_nodes,
+                                     clean_indexes % self.num_nodes], axis =-1)
         adj_ori = model.adj_ori_dense - \
             tf.matrix_diag(tf.diag_part(model.adj_ori_dense))
         #clean_mask = tf.where(tf.equal(adj_ori, 1))
@@ -648,7 +649,39 @@ class Optimizergaegan(object):
         #    self.reward_and_per = (self.percentage_edge) * (self.reg)
         #G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
+    def loss_cross_entropy_logits_features(self, model,noised_indexes, clean_indexes,feature_entry_list,  G_comm_loss):
+        """
+        The loss with samples on delete x_tilde and add the reward percentage from Q learning
+        :param self:
+        :param model:
+        :param G_comm_loss:
+        :return:
+        """
+        ################## the edge loss part #######################
+        noised_indexes_2d = tf.stack([noised_indexes //self.num_nodes,
+                                      noised_indexes % self.num_nodes], axis = -1)
+        clean_indexes_2d = tf.stack([clean_indexes // self.num_nodes,
+                                     clean_indexes % self.num_nodes], axis =-1)
+        adj_ori = model.adj_ori_dense - \
+            tf.matrix_diag(tf.diag_part(model.adj_ori_dense))
+        #clean_mask = tf.where(tf.equal(adj_ori, 1))
+        clean_mask = clean_indexes_2d
+        real_pred = tf.gather_nd(model.x_tilde_output_ori,clean_mask)
+        fake_pred = tf.gather_nd(model.x_tilde_output_ori, noised_indexes_2d)
+        loss_real = tf.nn.sigmoid_cross_entropy_with_logits(labels = tf.ones_like(real_pred), logits = real_pred)
+        loss_fake = tf.nn.sigmoid_cross_entropy_with_logits(labels = tf.zeros_like(fake_pred), logits = fake_pred)
+        G_comm_loss = tf.reduce_mean(loss_real) +tf.reduce_mean(loss_fake)
+        ############### the feature loss part
+        indices = clean_indexes_2d
+        values = tf.ones_like(clean_indexes)
+        shape = [self.num_nodes, self.num_nodes]
+        adj_in_comm = tf.SparseTensor(indices, values, shape)
+        self.score = tf.matmul(tf.sparse_tensor_dense_matmul(adj_in_comm, self.new_feature_prob),
+                          tf.transpose(self.new_feature_prob))
+        losses_feature =(-1) * tf.sigmoid(tf.trace(self.score))
 
+        ###############
+        return G_comm_loss + self.ratio_loss_fea * losses_feature
 
 
     def dis_cutmin_loss_clean(self, model):

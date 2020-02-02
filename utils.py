@@ -686,6 +686,22 @@ def randomly_flip_features(features, k,seed):
            features_lil[flip_node_idx[i], flip_fea_idx[i]] = 1
     return features_lil.tocsr()
 
+def flip_features_fix_attr(features, k,seed, fixed_list):
+    np.random.seed(seed)
+    num_node = features.shape[0]
+    num_features = features.shape[1]
+    features_lil = features.tolil()
+    flip_node_idx = np.random.choice(num_node, size = min(k, len(num_node)), replace = False)   ## select 100 node
+    #flip_fea_idx = np.random.choice(flip_fea_idx_select, size=k)
+    ### this is the matrix one
+    for i in range(len(flip_node_idx)):
+        features_lil[flip_node_idx[i], fixed_list] = np.ones(len(fixed_list)) - features_lil[flip_node_idx[i], fixed_list].todense()
+        # if features[flip_node_idx[i], fixed_list] == 1:
+        #     features_lil[flip_node_idx[i], flip_fea_idx[i]] = 0
+        # else:
+        #    features_lil[flip_node_idx[i], flip_fea_idx[i]] = 1
+    return features_lil.tocsr()
+
 def denoise_ratio(add_idxes, delete_idxes):
     """
     check the ratio between the add edges and delted edges
