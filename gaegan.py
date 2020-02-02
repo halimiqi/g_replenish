@@ -509,13 +509,14 @@ class gaegan(object):
             percentage_all = percentage_node + percentage_feature
         return new_features, percentage_all, percentage_node, percentage_feature
 
-    def flip_features_0202(self,clean_indexes, k = 10,,  reuse = tf.AUTO_REUSE):
+    def flip_features_0202(self,clean_indexes, k = 10,  reuse = tf.AUTO_REUSE):
         with tf.variable_scope("generate_flip_fea") as scope:
-            clean_indexes_2d = tf.stack([clean_indexes // self.num_nodes,
-                                         clean_indexes % self.num_nodes], axis=-1)
+            clean_indexes_2d = tf.stack([clean_indexes // self.n_samples,
+                                         clean_indexes % self.n_samples], axis=-1)
             indices = clean_indexes_2d
-            values = tf.ones_like(clean_indexes)
-            shape = [self.num_nodes, self.num_nodes]
+            values = tf.ones_like(clean_indexes, tf.float32)
+            shape = [self.n_samples, self.n_samples]
+            indices = tf.cast(indices, tf.int64)
             adj_in_comm = tf.SparseTensor(indices, values, shape)
             self.score = tf.matmul(tf.sparse_tensor_dense_matmul(adj_in_comm, self.new_feature_prob),
                                    tf.transpose(self.new_feature_prob))
@@ -614,7 +615,7 @@ class gaegan(object):
             N = tf.nn.softmax(H, axis = -1)  # then shape of N is n*d
             ones = tf.ones_like(input_feature)
             X =input_feature * (1 - N) + (ones - input_feature) * N
-        return X,
+        return X
     ## this is the enviorment of the problem.
     def discriminate_mock_detect(self, inputs,new_adj,  reuse = False):
         # this methods uses this part to mock the community detection algorithm

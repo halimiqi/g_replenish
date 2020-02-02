@@ -691,7 +691,7 @@ def flip_features_fix_attr(features, k,seed, fixed_list):
     num_node = features.shape[0]
     num_features = features.shape[1]
     features_lil = features.tolil()
-    flip_node_idx = np.random.choice(num_node, size = min(k, len(num_node)), replace = False)   ## select 100 node
+    flip_node_idx = np.random.choice(num_node, size = min(k, num_node), replace = False)   ## select 100 node
     #flip_fea_idx = np.random.choice(flip_fea_idx_select, size=k)
     ### this is the matrix one
     for i in range(len(flip_node_idx)):

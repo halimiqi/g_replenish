@@ -650,7 +650,7 @@ class Optimizergaegan(object):
         #    self.reward_and_per = (self.percentage_edge) * (self.reg)
         #G_comm_loss = (-1) * G_comm_loss
         return G_comm_loss
-    def loss_cross_entropy_logits_features(self, model,noised_indexes, clean_indexes,feature_entry_list,  G_comm_loss):
+    def loss_cross_entropy_logits_features(self, model,noised_indexes, clean_indexes,  G_comm_loss):
         """
         The loss with samples on delete x_tilde and add the reward percentage from Q learning
         :param self:
@@ -674,11 +674,12 @@ class Optimizergaegan(object):
         G_comm_loss = tf.reduce_mean(loss_real) +tf.reduce_mean(loss_fake)
         ############### the feature loss part
         indices = clean_indexes_2d
-        values = tf.ones_like(clean_indexes)
+        indices = tf.cast(indices, tf.int64)
+        values = tf.ones_like(clean_indexes, dtype = tf.float32)
         shape = [self.num_nodes, self.num_nodes]
         adj_in_comm = tf.SparseTensor(indices, values, shape)
-        self.score = tf.matmul(tf.sparse_tensor_dense_matmul(adj_in_comm, self.new_feature_prob),
-                          tf.transpose(self.new_feature_prob))
+        self.score = tf.matmul(tf.sparse_tensor_dense_matmul(adj_in_comm, model.new_feature_prob),
+                          tf.transpose(model.new_feature_prob))
         losses_feature =(-1) * tf.sigmoid(tf.trace(self.score))
 
         ###############

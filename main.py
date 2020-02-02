@@ -39,7 +39,7 @@ FLAGS = flags.FLAGS
 ##### this is for gae part
 flags.DEFINE_integer('n_clusters', 7, 'Number of epochs to train.')    # this one can be calculated according to labels
 flags.DEFINE_string("target_index_list","10,35", "The index for the target_index")
-flags.DEFINE_integer('epochs', 450, 'Number of epochs to train.')
+flags.DEFINE_integer('epochs', 700, 'Number of epochs to train.')
 flags.DEFINE_integer('hidden1', 32, 'Number of units in hidden layer 1.')
 flags.DEFINE_integer('hidden2', 16, 'Number of units in hidden layer 2.')
 flags.DEFINE_integer('hidden3', 32, 'Number of units in graphite hidden layers.')
@@ -75,7 +75,7 @@ flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
 flags.DEFINE_integer("k", 1000, "The k edges to delete")
-flags.DEFINE_integer("k_features", 1000, "The k nodes to flip features")
+flags.DEFINE_integer("k_features", 150, "The k nodes to flip features")
 flags.DEFINE_float('ratio_loss_fea', 0.1, 'the ratio of generate loss for features')
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
@@ -147,9 +147,10 @@ def get_new_adj(feed_dict, sess, model):
     return new_adj
 
 def get_new_feature(feed_dict, sess,flip_features_csr, feature_entry, model):
-    new_indexes = model.flip_feature_indexes(session = sess, feed_dict = feed_dict)
+    new_indexes = model.flip_feature_indexes.eval(session = sess, feed_dict = feed_dict)
+    flip_features_lil = flip_features_csr.tolil()
     for index in new_indexes:
-        flip_features_csr[index, feature_entry] = 1 - flip_features_csr[index, feature_entry].todense()
+        flip_features_lil[index, feature_entry] = 1 - flip_features_lil[index, feature_entry].todense()
     return flip_features_csr
 # Train model
 def train():
@@ -161,7 +162,7 @@ def train():
     adj_new , add_idxes= add_edges_between_labels(adj_orig, FLAGS.k*2, y_train)
     #features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
     fixed_entry = list(np.arange(100))
-    features_new_csr = flip_features_fix_attr(features_csr, k = FLAGS.k_features, seed = seed + 5, fixed_list = fixed_entry)
+    features_new_csr = flip_features_fix_attr(features_csr, k = FLAGS.k_features * 2, seed = seed + 5, fixed_list = fixed_entry)
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
     ####################   check the laplacian lower bound ##########
     row_sum = adj_new.sum(1).A1
