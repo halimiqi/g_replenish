@@ -622,8 +622,8 @@ class Optimizergaegan(object):
         """
         noised_indexes_2d = tf.stack([noised_indexes //self.num_nodes,
                                       noised_indexes % self.num_nodes], axis = -1)
-        clean_indexes_2d = tf.stack([noised_indexes // self.num_nodes,
-                                     noised_indexes % self.num_nodes], axis =-1)
+        clean_indexes_2d = tf.stack([clean_indexes // self.num_nodes,
+                                     clean_indexes % self.num_nodes], axis =-1)
         adj_ori = model.adj_ori_dense - \
             tf.matrix_diag(tf.diag_part(model.adj_ori_dense))
         #clean_mask = tf.where(tf.equal(adj_ori, 1))

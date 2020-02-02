@@ -420,7 +420,7 @@ def train():
     print(testacc_clean)
     print("*#" * 15)
     print("The original acc is: ")
-    print(testacc)
+    print(testacc_upper)
     print("*#"* 15)
     print("The only modify adj acc is : ")
     print(testacc_new)
