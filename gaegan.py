@@ -53,6 +53,7 @@ class gaegan(object):
         self.indexes_add_orig = placeholders['noised_mask']
         self.adj_clean = kwargs["adj_clean"]
         self.noised_num = placeholders["noised_num"]
+        self.clean_indexes = placeholders["clean_mask"]
         #######################################
         return
 
@@ -119,7 +120,7 @@ class gaegan(object):
             ###################3
             ####### get feature distributions accoring to eq 6 and 7
             self.new_feature_prob = self.generate_feature_prob(self.z_x, self.feature_dense, self.input_dim, self.input_dim * 2)
-            self.flip_feature_indexes = self.flip_features_0202(k = FLAGS.k_features)
+            self.flip_feature_indexes = self.flip_features_0202(self.clean_indexes, k = FLAGS.k_features)
 
             ############################################
             # node_sample_dist = tf.nn.softmax(tf.nn.sigmoid(
@@ -508,14 +509,21 @@ class gaegan(object):
             percentage_all = percentage_node + percentage_feature
         return new_features, percentage_all, percentage_node, percentage_feature
 
-    def flip_features_0202(self, k = 10, reuse = tf.AUTO_REUSE):
+    def flip_features_0202(self,clean_indexes, k = 10,,  reuse = tf.AUTO_REUSE):
         with tf.variable_scope("generate_flip_fea") as scope:
-            node_dist = tf.diag_part(optimizer.score)
+            clean_indexes_2d = tf.stack([clean_indexes // self.num_nodes,
+                                         clean_indexes % self.num_nodes], axis=-1)
+            indices = clean_indexes_2d
+            values = tf.ones_like(clean_indexes)
+            shape = [self.num_nodes, self.num_nodes]
+            adj_in_comm = tf.SparseTensor(indices, values, shape)
+            self.score = tf.matmul(tf.sparse_tensor_dense_matmul(adj_in_comm, self.new_feature_prob),
+                                   tf.transpose(self.new_feature_prob))
+            node_dist = tf.diag_part(self.score)
             node_dist = tf.reduce_max(node_dist) - node_dist
             node_dist = tf.nn.softmax(node_dist)
             ##### here we still ues topk to calculate
             _, indexes = tf.nn.top_k(node_dist, tf.minimum(self.n_samples, k))
-
         return indexes
 
     def encoder(self, inputs):

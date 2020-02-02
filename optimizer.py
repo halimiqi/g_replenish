@@ -89,7 +89,8 @@ class Optimizergaegan(object):
             #                                                                           self.G_comm_loss)
             #self.G_comm_loss = self.reg_loss_no_sample_reverse_edges_only_ori_current_intersect(model,
             #                                                                          self.G_comm_loss)
-            self.G_comm_loss = self.loss_cross_entropy_logits(model, noised_indexes,clean_indexes, self.G_comm_loss)
+            #self.G_comm_loss = self.loss_cross_entropy_logits(model, noised_indexes,clean_indexes, self.G_comm_loss)
+            self.G_comm_loss = self.loss_cross_entropy_logits_features(model, noised_indexes, clean_indexes, self.G_comm_loss)
         ######################################################
         # because the generate part is only inner product , there is no variable to optimize, we should change the format and try again
             if FLAGS.generator == "graphite":
