@@ -680,7 +680,7 @@ class Optimizergaegan(object):
         adj_in_comm = tf.SparseTensor(indices, values, shape)
         self.score = tf.matmul(tf.sparse_tensor_dense_matmul(adj_in_comm, model.new_feature_prob),
                           tf.transpose(model.new_feature_prob))
-        losses_feature =(-1) * tf.sigmoid(tf.trace(self.score))
+        losses_feature =(-1) *tf.log(tf.sigmoid(tf.trace(self.score)))
 
         ###############
         return G_comm_loss + self.ratio_loss_fea * losses_feature

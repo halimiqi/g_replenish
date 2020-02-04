@@ -695,7 +695,8 @@ def flip_features_fix_attr(features, k,seed, fixed_list):
     #flip_fea_idx = np.random.choice(flip_fea_idx_select, size=k)
     ### this is the matrix one
     for i in range(len(flip_node_idx)):
-        features_lil[flip_node_idx[i], fixed_list] = np.ones(len(fixed_list)) - features_lil[flip_node_idx[i], fixed_list].todense()
+        for j in fixed_list:
+            features_lil[flip_node_idx[i], j] = 1 - features_lil[flip_node_idx[i],j]
         # if features[flip_node_idx[i], fixed_list] == 1:
         #     features_lil[flip_node_idx[i], flip_fea_idx[i]] = 0
         # else:

@@ -75,8 +75,8 @@ flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
 flags.DEFINE_integer("k", 1000, "The k edges to delete")
-flags.DEFINE_integer("k_features", 150, "The k nodes to flip features")
-flags.DEFINE_float('ratio_loss_fea', 0.1, 'the ratio of generate loss for features')
+flags.DEFINE_integer("k_features", 200, "The k nodes to flip features")
+flags.DEFINE_float('ratio_loss_fea', 0, 'the ratio of generate loss for features')
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
 flags.DEFINE_integer("op", 1, "Training or Test")
@@ -150,8 +150,9 @@ def get_new_feature(feed_dict, sess,flip_features_csr, feature_entry, model):
     new_indexes = model.flip_feature_indexes.eval(session = sess, feed_dict = feed_dict)
     flip_features_lil = flip_features_csr.tolil()
     for index in new_indexes:
-        flip_features_lil[index, feature_entry] = 1 - flip_features_lil[index, feature_entry].todense()
-    return flip_features_csr
+        for j in feature_entry:
+            flip_features_lil[index, j] = 1 - flip_features_lil[index, j]
+    return flip_features_lil.tocsr()
 # Train model
 def train():
     adj_orig = adj
@@ -395,6 +396,7 @@ def train():
     # modified_model.train(new_adj_norm_sparse_csr, split_train, split_val, node_labels)
     # modified_acc = modified_model.test(split_unlabeled, node_labels, new_adj_norm_sparse_csr)
     testacc_new_adj, valid_acc_new_adj = GCN.run(FLAGS.dataset,new_adj_sparse,features_new_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "modified")
+    testacc_new_adj_cleanfea, valid_acc_new_adj_cleanfea = GCN.run(FLAGS.dataset,new_adj_sparse,features_csr,y_train,y_val, y_test, train_mask, val_mask, test_mask, name = "modified")
     testacc_new_adj_fea, valid_acc_new_adj_fea = GCN.run(FLAGS.dataset, new_adj_sparse, new_features_csr, y_train, y_val, y_test,
                                          train_mask, val_mask, test_mask, name="modified")
     new_adj = get_new_adj(feed_dict, sess, model)
@@ -416,13 +418,15 @@ def train():
     print("The noisd adj only acc is: ")
     print(testacc_upper)
     print("*#" * 15)
-    print("The only modify adj acc is : ")
+    print("The only modify adj acc is(with noised feature) : ")
     print(testacc_new_adj)
     print("*#" * 15)
+    print("The only modify adj acc is(with clean feature):")
+    print(testacc_new_adj_cleanfea)
     # print("The only modify feature acc is : ")
     # print(testacc_new2)
     # print("*#" * 15)
-    print("The modify both adj and feature and acc is : ")
+    print("The modify both adj and feature and acc is(noised both) : ")
     print(testacc_new_adj_fea)
     return new_adj,testacc_clean, testacc_upper, testacc_new_adj, testacc_new_adj_fea    #, testacc_new2, testacc_new3
 
