@@ -104,7 +104,8 @@ class Optimizergaegan(object):
                 self.G_min_op = self.generate_optimizer.minimize(self.G_comm_loss, global_step=global_step,
                                                                  var_list=generate_varlist)
             ######################################################
-            self.D_loss = self.dis_cutmin_loss_clean(model)
+            #self.D_loss = self.dis_cutmin_loss_clean(model)
+            self.D_loss = self.dis_cutmin_loss_clean_feature(model)
             self.D_min_op = self.discriminate_optimizer.minimize(self.D_loss, global_step = global_step,
                                                                  var_list = discriminate_varlist)
 
@@ -674,6 +675,35 @@ class Optimizergaegan(object):
         ## the overall cutmin_loss
         D_loss = D_mincut_loss + FLAGS.mincut_r * ortho_loss
         return D_loss
+    def dis_cutmin_loss_clean_feature(self, model):
+        ######## construct the new A for cutmin loss  ############
+        A_xx = model.adj_ori_dense * tf.matmul(model.feature_dense,
+                                               tf.transpose(model.feature_dense))
+        import pdb ;pdb.set_trace()
+        #########################################################
+        A_pool = tf.matmul(
+            tf.transpose(tf.matmul(A_xx, model.realD_tilde)), model.realD_tilde)
+        num = tf.diag_part(A_pool)
+
+        D = tf.reduce_sum(A_xx, axis=-1)
+        D = tf.matrix_diag(D)
+        D_pooled = tf.matmul(
+            tf.transpose(tf.matmul(D, model.realD_tilde)), model.realD_tilde)
+        den = tf.diag_part(D_pooled)
+        D_mincut_loss = -(1 / FLAGS.n_clusters) * (num / den)
+        D_mincut_loss = tf.reduce_sum(D_mincut_loss)
+        ## the orthogonal part loss
+        St_S = (FLAGS.n_clusters / self.num_nodes) * tf.matmul(tf.transpose(model.realD_tilde), model.realD_tilde)
+        I_S = tf.eye(FLAGS.n_clusters)
+        # ortho_loss =tf.norm(St_S / tf.norm(St_S) - I_S / tf.norm(I_S))
+        ortho_loss = tf.square(tf.norm(St_S - I_S))
+        # S_T = tf.transpose(model.vaeD_tilde, perm=[1, 0])
+        # AA_T = tf.matmul(model.vaeD_tilde, S_T) - tf.eye(FLAGS.n_clusters)
+        # ortho_loss = tf.square(tf.norm(AA_T))
+        ## the overall cutmin_loss
+        D_loss = D_mincut_loss + FLAGS.mincut_r * ortho_loss
+        return D_loss
+
 
     pass
 
