@@ -686,12 +686,14 @@ def randomly_flip_features(features, k,seed):
            features_lil[flip_node_idx[i], flip_fea_idx[i]] = 1
     return features_lil.tocsr()
 
-def flip_features_fix_attr(features, k,seed, fixed_list):
+def flip_features_fix_attr(features, k,seed, fixed_list, row_sum):
     np.random.seed(seed)
     num_node = features.shape[0]
     num_features = features.shape[1]
     features_lil = features.tolil()
-    flip_node_idx = np.random.choice(num_node, size = min(k, num_node), replace = False)   ## select 100 node
+    #flip_node_idx = np.random.choice(num_node, size = min(k, num_node), replace = False)   ## select 100 node
+    flip_node_idx = np.argsort(row_sum)
+    flip_node_idx = flip_node_idx[-1*min(int(k), num_node):]
     #flip_fea_idx = np.random.choice(flip_fea_idx_select, size=k)
     ### this is the matrix one
     for i in range(len(flip_node_idx)):

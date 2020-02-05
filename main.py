@@ -75,7 +75,9 @@ flags.DEFINE_integer("repeat", 1000, "the numbers of repeat for your datasets")
 flags.DEFINE_string("trained_base_path", '191216023843', "The path for the trained model")
 flags.DEFINE_string("trained_our_path", '191215231708', "The path for the trained model")
 flags.DEFINE_integer("k", 1000, "The k edges to delete")
+flags.DEFINE_integer("k_noise", 2000, "The k edges to add noise")
 flags.DEFINE_integer("k_features", 200, "The k nodes to flip features")
+flags.DEFINE_integer("k_features_noise", 400, "The k nodes to add noise and flip features")
 flags.DEFINE_float('ratio_loss_fea', 0, 'the ratio of generate loss for features')
 flags.DEFINE_integer('delete_edge_times', 1, 'sample times for delete K edges. We use this to average the x_tilde(normalized adj) got from generator')
 flags.DEFINE_integer('baseline_target_budget', 5, 'the parametor for graphite generator')
@@ -160,13 +162,14 @@ def train():
                                         shape=adj_orig.shape)  # delete self loop
     adj_orig.eliminate_zeros()
     #adj_new = randomly_add_edges(adj_orig, k=FLAGS.k)  # randomly add new edges
-    adj_new , add_idxes= add_edges_between_labels(adj_orig, FLAGS.k*2, y_train)
+    adj_new , add_idxes= add_edges_between_labels(adj_orig, FLAGS.k_noise, y_train)
     #features_new_csr = randomly_flip_features(features_csr, k = FLAGS.k, seed = seed+5) # randomly add new features
+    row_sum = adj_new.sum(1).A1
     fixed_entry = list(np.arange(100))
-    features_new_csr = flip_features_fix_attr(features_csr, k = FLAGS.k_features * 2, seed = seed + 5, fixed_list = fixed_entry)
+    features_new_csr = flip_features_fix_attr(features_csr, k = FLAGS.k_features_noise, seed = seed + 5, fixed_list = fixed_entry,
+                                              row_sum = row_sum)
     feature_new = sparse_to_tuple(features_new_csr.tocoo())
     ####################   check the laplacian lower bound ##########
-    row_sum = adj_new.sum(1).A1
     row_sum = sp.diags(row_sum)
     L = row_sum - adj_new
     ori_Lap = features_new_csr.transpose().dot(L).dot(features_new_csr)
